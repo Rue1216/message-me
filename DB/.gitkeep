@@ -1,2 +1,0 @@
-# DDL / Stored Procedure / 種子資料於 feat/db-schema 分支加入。
-# 此目錄由 docker-compose.yml 掛載至 MySQL 的 /docker-entrypoint-initdb.d，故先行建立。
