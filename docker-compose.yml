@@ -1,0 +1,83 @@
+# 三層式架構：Web Server（web）+ Application Server（app）+ 關聯式資料庫（db）
+# 啟動方式：cp .env.example .env 並填妥機密設定後，執行 docker compose up --build
+
+services:
+  # ---------- 資料層 ----------
+  db:
+    image: mysql:8.4
+    container_name: message-me-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?請於 .env 設定 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-message_me}
+      MYSQL_USER: ${MYSQL_USER:-app_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?請於 .env 設定 MYSQL_PASSWORD}
+      TZ: Asia/Taipei
+    volumes:
+      - db-data:/var/lib/mysql
+      # DDL / Stored Procedure / 種子資料於容器首次啟動時自動載入（依檔名順序）
+      - ./DB:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-u', 'root', '-p${MYSQL_ROOT_PASSWORD}']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks:
+      - message-me
+    # 資料庫不對外開放連接埠，僅容器網路內可存取
+
+  # ---------- 應用層 ----------
+  app:
+    build:
+      context: ./backend
+    container_name: message-me-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # allowMultiQueries=false：從連線層再堵一次 SQL Injection 的多語句攻擊面
+      SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/${MYSQL_DATABASE:-message_me}?useSSL=false&allowPublicKeyRetrieval=true&allowMultiQueries=false&serverTimezone=Asia/Taipei&characterEncoding=utf8
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-app_user}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:?請於 .env 設定 MYSQL_PASSWORD}
+      APP_JWT_SECRET: ${JWT_SECRET:?請於 .env 設定 JWT_SECRET}
+      APP_JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES:-120}
+      APP_UPLOAD_DIR: /app/uploads
+      TZ: Asia/Taipei
+    volumes:
+      - uploads:/app/uploads
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--spider', 'http://localhost:8081/actuator/health']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks:
+      - message-me
+    # 應用層不對外開放連接埠，一律經由 Nginx 代理
+
+  # ---------- Web Server 層 ----------
+  web:
+    build:
+      context: ./frontend
+    container_name: message-me-web
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - '${WEB_PORT:-8080}:8080'
+    volumes:
+      # 使用者上傳的圖片由 Nginx 以唯讀方式直接提供
+      - uploads:/var/www/uploads:ro
+    networks:
+      - message-me
+
+volumes:
+  db-data:
+  uploads:
+
+networks:
+  message-me:
+    driver: bridge

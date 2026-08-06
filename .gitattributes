@@ -1,0 +1,23 @@
+# 統一由 Git 自動偵測文字檔並在版本庫中以 LF 儲存
+* text=auto
+
+# 這些檔案在 Linux 容器 / CI 中執行，必須維持 LF，否則 shebang 會失效
+*.sh        text eol=lf
+mvnw        text eol=lf
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.sql       text eol=lf
+nginx.conf  text eol=lf
+
+# Windows 批次檔需 CRLF
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+
+# 二進位檔不做行尾轉換
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.webp      binary
+*.ico       binary
+*.jar       binary
