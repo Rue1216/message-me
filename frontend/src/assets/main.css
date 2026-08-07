@@ -1,0 +1,45 @@
+/*
+ * 基礎樣式。
+ *
+ * 字體一律使用系統字型堆疊，不引入網路字體——內容安全政策（見 frontend/nginx.conf）
+ * 只允許同源資源，外部字體會被擋下，而自架字體檔對這個專案的價值不足以抵過體積。
+ */
+
+:root {
+  --app-max-width: 46rem;
+  --app-gutter: 1rem;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    'Noto Sans TC',
+    'PingFang TC',
+    'Microsoft JhengHei',
+    sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/*
+ * 使用者輸入的內容以 pre-wrap 呈現，保留換行但不使用 v-html。
+ * 專案禁用 v-html（ESLint 規則 vue/no-v-html），文字一律走 Vue 的 {{ }} 自動轉義。
+ */
+.user-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

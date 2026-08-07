@@ -67,7 +67,8 @@ services:
       app:
         condition: service_healthy
     ports:
-      - '${WEB_PORT:-8080}:8080'
+      # 前端固定使用 3001（容器內外一致）。整份 compose 只有這一個對外連接埠。
+      - '${WEB_PORT:-3001}:3001'
     volumes:
       # 使用者上傳的圖片由 Nginx 以唯讀方式直接提供
       - uploads:/var/www/uploads:ro
