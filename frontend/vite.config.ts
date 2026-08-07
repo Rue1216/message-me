@@ -43,7 +43,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.spec.ts'],
+    // 測試一律集中在各模組的 __tests__/ 下，瀏覽原始碼目錄時只會看到實作檔本身
+    include: ['src/**/__tests__/**/*.spec.ts'],
     globals: true,
   },
 })

@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
+import { validateCommentContent, validatePostContent } from '@/utils/validation/post'
 import {
   validateBiography,
-  validateCommentContent,
   validateEmail,
   validatePassword,
   validatePhoneNumber,
-  validatePostContent,
   validateUserName,
-} from '@/utils/validation'
+} from '@/utils/validation/user'
 
 describe('validatePhoneNumber', () => {
   it('接受 09 開頭的 10 位數字', () => {

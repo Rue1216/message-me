@@ -4,14 +4,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { NMessageProvider } from 'naive-ui'
 
-import { login } from '@/api/auth'
-import { ApiClientError } from '@/api/http'
+import { login } from '@/api/resources/auth'
+import { ApiClientError } from '@/api/client/http'
 import router from '@/router'
 import { useAuthStore } from '@/stores/auth'
 import LoginView from '@/views/LoginView.vue'
 import type { LoginResult } from '@/types/api'
 
-vi.mock('@/api/auth', () => ({
+vi.mock('@/api/resources/auth', () => ({
   login: vi.fn(),
   register: vi.fn(),
 }))

@@ -1,7 +1,5 @@
-import type { FormItemRule } from 'naive-ui'
-
 /**
- * 表單驗證規則。
+ * 使用者相關的表單驗證規則。
  *
  * <p>每條規則都與後端 DTO 的 Bean Validation 對齊（`presentation/dto/request/*.java`），
  * 上限值刻意寫在同一處而非散落各表單，改動時只需要對照後端一次。
@@ -10,17 +8,14 @@ import type { FormItemRule } from 'naive-ui'
  * 繞過瀏覽器直接打 API 一樣會被擋下。
  */
 
+import type { Validator } from '@/utils/validation/types'
+
 export const PHONE_NUMBER_PATTERN = /^09\d{8}$/
 export const PASSWORD_MIN_LENGTH = 8
 export const PASSWORD_MAX_LENGTH = 100
 export const USER_NAME_MAX_LENGTH = 50
 export const EMAIL_MAX_LENGTH = 255
 export const BIOGRAPHY_MAX_LENGTH = 500
-export const POST_CONTENT_MAX_LENGTH = 5000
-export const COMMENT_CONTENT_MAX_LENGTH = 1000
-
-/** 通過時回傳 null，否則回傳要顯示給使用者的訊息。 */
-export type Validator = (value: string) => string | null
 
 export const validatePhoneNumber: Validator = (value) => {
   const trimmed = value.trim()
@@ -76,42 +71,4 @@ export const validateBiography: Validator = (value) => {
     return `自我介紹不可超過 ${BIOGRAPHY_MAX_LENGTH} 字`
   }
   return null
-}
-
-export const validatePostContent: Validator = (value) => {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return '請填寫發文內容'
-  }
-  if (trimmed.length > POST_CONTENT_MAX_LENGTH) {
-    return `發文內容不可超過 ${POST_CONTENT_MAX_LENGTH} 字`
-  }
-  return null
-}
-
-export const validateCommentContent: Validator = (value) => {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return '請填寫留言內容'
-  }
-  if (trimmed.length > COMMENT_CONTENT_MAX_LENGTH) {
-    return `留言內容不可超過 ${COMMENT_CONTENT_MAX_LENGTH} 字`
-  }
-  return null
-}
-
-/**
- * 把純函式驗證器包成 Naive UI 的表單規則。
- *
- * <p>驗證邏輯本身與 UI 函式庫無關，因此能被單獨測試；這層轉接只負責把 null / 訊息
- * 翻譯成 Naive UI 期望的 true / Error。
- */
-export function toFormRule(validate: Validator, trigger: string[] = ['blur', 'input']): FormItemRule {
-  return {
-    trigger,
-    validator(_rule: FormItemRule, value: string | null): true | Error {
-      const message = validate(value ?? '')
-      return message === null ? true : new Error(message)
-    },
-  }
 }

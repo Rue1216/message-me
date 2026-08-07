@@ -3,10 +3,10 @@ import { ref } from 'vue'
 import { useMessage, type FormInst, type FormRules } from 'naive-ui'
 import { useRoute, useRouter } from 'vue-router'
 
-import { login } from '@/api/auth'
-import { ApiClientError } from '@/api/http'
+import { login } from '@/api/resources/auth'
+import { ApiClientError } from '@/api/client/http'
 import { useAuthStore } from '@/stores/auth'
-import { toFormRule } from '@/utils/validation'
+import { toFormRule } from '@/utils/validation/form-rule'
 
 const auth = useAuthStore()
 const route = useRoute()

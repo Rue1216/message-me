@@ -3,18 +3,18 @@ import { ref } from 'vue'
 import { useMessage, type FormInst, type FormRules } from 'naive-ui'
 import { useRouter } from 'vue-router'
 
-import { login, register } from '@/api/auth'
-import { ApiClientError } from '@/api/http'
+import { login, register } from '@/api/resources/auth'
+import { ApiClientError } from '@/api/client/http'
 import { useAuthStore } from '@/stores/auth'
+import { toFormRule } from '@/utils/validation/form-rule'
 import {
   PASSWORD_MAX_LENGTH,
   USER_NAME_MAX_LENGTH,
-  toFormRule,
   validateEmail,
   validatePassword,
   validatePhoneNumber,
   validateUserName,
-} from '@/utils/validation'
+} from '@/utils/validation/user'
 
 const auth = useAuthStore()
 const router = useRouter()

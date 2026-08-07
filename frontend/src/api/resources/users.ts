@@ -1,4 +1,4 @@
-import { http, unwrap } from '@/api/http'
+import { http, unwrap } from '@/api/client/http'
 import type { ApiResponse, CurrentUser, PublicUser, UpdateProfilePayload } from '@/types/api'
 
 /** 取得本人的完整檔案。使用者身分取自權杖，不需帶 ID。 */

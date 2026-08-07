@@ -2,7 +2,7 @@
 import { useMessage, type DropdownOption } from 'naive-ui'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 
-import UserAvatar from '@/components/UserAvatar.vue'
+import UserAvatar from '@/components/user/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
 
 /**

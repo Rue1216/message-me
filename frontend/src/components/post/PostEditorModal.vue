@@ -2,9 +2,9 @@
 import { ref } from 'vue'
 import { useMessage } from 'naive-ui'
 
-import { updatePost } from '@/api/posts'
-import { ApiClientError } from '@/api/http'
-import PostForm from '@/components/PostForm.vue'
+import { updatePost } from '@/api/resources/posts'
+import { ApiClientError } from '@/api/client/http'
+import PostForm from '@/components/post/PostForm.vue'
 import type { Post, PostPayload } from '@/types/api'
 
 /**

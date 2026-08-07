@@ -2,11 +2,11 @@
 import { onMounted, ref } from 'vue'
 import { useDialog, useMessage } from 'naive-ui'
 
-import { ApiClientError } from '@/api/http'
-import { createPost, deletePost, fetchPosts } from '@/api/posts'
-import PostCard from '@/components/PostCard.vue'
-import PostEditorModal from '@/components/PostEditorModal.vue'
-import PostForm from '@/components/PostForm.vue'
+import { ApiClientError } from '@/api/client/http'
+import { createPost, deletePost, fetchPosts } from '@/api/resources/posts'
+import PostCard from '@/components/post/PostCard.vue'
+import PostEditorModal from '@/components/post/PostEditorModal.vue'
+import PostForm from '@/components/post/PostForm.vue'
 import { useAuthStore } from '@/stores/auth'
 import type { Post, PostPayload } from '@/types/api'
 

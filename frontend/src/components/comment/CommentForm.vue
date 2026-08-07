@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-import { COMMENT_CONTENT_MAX_LENGTH, validateCommentContent } from '@/utils/validation'
+import { COMMENT_CONTENT_MAX_LENGTH, validateCommentContent } from '@/utils/validation/post'
 
 /** 新增留言的輸入框。與 PostForm 一樣只負責蒐集內容，API 交給頁面處理。 */
 withDefaults(defineProps<{ submitting?: boolean }>(), { submitting: false })

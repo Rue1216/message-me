@@ -2,20 +2,20 @@
 import { onMounted, ref } from 'vue'
 import { useMessage, type FormInst, type FormRules } from 'naive-ui'
 
-import { ApiClientError } from '@/api/http'
-import { fetchCurrentUser, updateCurrentUser } from '@/api/users'
-import ImageUploader from '@/components/ImageUploader.vue'
-import UserAvatar from '@/components/UserAvatar.vue'
+import { ApiClientError } from '@/api/client/http'
+import { fetchCurrentUser, updateCurrentUser } from '@/api/resources/users'
+import ImageUploader from '@/components/common/ImageUploader.vue'
+import UserAvatar from '@/components/user/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
-import { formatDateTime } from '@/utils/datetime'
+import { formatDateTime } from '@/utils/format/datetime'
+import { toFormRule } from '@/utils/validation/form-rule'
 import {
   BIOGRAPHY_MAX_LENGTH,
   USER_NAME_MAX_LENGTH,
-  toFormRule,
   validateBiography,
   validateEmail,
   validateUserName,
-} from '@/utils/validation'
+} from '@/utils/validation/user'
 
 /**
  * 個人檔案編輯。

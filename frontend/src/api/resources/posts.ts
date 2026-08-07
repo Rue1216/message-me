@@ -1,4 +1,4 @@
-import { http, unwrap } from '@/api/http'
+import { http, unwrap } from '@/api/client/http'
 import type { ApiResponse, PageResponse, Post, PostPayload } from '@/types/api'
 
 /** 動態牆分頁，新到舊。頁碼自 1 起算。公開。 */

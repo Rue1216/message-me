@@ -1,4 +1,4 @@
-import { http, unwrap } from '@/api/http'
+import { http, unwrap } from '@/api/client/http'
 import type { ApiResponse, Comment, PageResponse } from '@/types/api'
 
 /** 單篇發文的留言分頁，舊到新。公開。 */

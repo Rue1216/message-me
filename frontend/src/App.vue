@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { dateZhTW, zhTW } from 'naive-ui'
 
-import AppShell from '@/components/AppShell.vue'
+import AppShell from '@/components/layout/AppShell.vue'
 import { themeOverrides } from '@/theme'
 
 /**

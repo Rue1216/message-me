@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios'
 
-import { ApiClientError, http, setUnauthorizedHandler, unwrap } from '@/api/http'
+import { ApiClientError, http, setUnauthorizedHandler, unwrap } from '@/api/client/http'
 import { readSession, writeSession } from '@/auth/session-storage'
 import type { CurrentUser } from '@/types/api'
 

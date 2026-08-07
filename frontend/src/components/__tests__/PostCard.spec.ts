@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { RouterLinkStub, mount } from '@vue/test-utils'
 
-import PostCard from '@/components/PostCard.vue'
+import PostCard from '@/components/post/PostCard.vue'
 import type { Post } from '@/types/api'
 
 const post: Post = {

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-import ImageUploader from '@/components/ImageUploader.vue'
+import ImageUploader from '@/components/common/ImageUploader.vue'
 import type { PostPayload } from '@/types/api'
-import { POST_CONTENT_MAX_LENGTH, validatePostContent } from '@/utils/validation'
+import { POST_CONTENT_MAX_LENGTH, validatePostContent } from '@/utils/validation/post'
 
 /**
  * 發文的輸入表單，新增與編輯共用。

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import UserAvatar from '@/components/UserAvatar.vue'
+import UserAvatar from '@/components/user/UserAvatar.vue'
 import type { Comment } from '@/types/api'
-import { formatDateTime, formatRelativeTime } from '@/utils/datetime'
+import { formatDateTime, formatRelativeTime } from '@/utils/format/datetime'
 
 /**
  * 留言列表。純呈現，刪除只送出事件由頁面處理。

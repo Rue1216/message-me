@@ -2,9 +2,9 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import UserAvatar from '@/components/UserAvatar.vue'
+import UserAvatar from '@/components/user/UserAvatar.vue'
 import type { Post } from '@/types/api'
-import { formatDateTime, formatRelativeTime } from '@/utils/datetime'
+import { formatDateTime, formatRelativeTime } from '@/utils/format/datetime'
 
 /**
  * 一則發文。

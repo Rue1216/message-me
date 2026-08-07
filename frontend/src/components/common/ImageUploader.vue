@@ -2,8 +2,8 @@
 import { ref } from 'vue'
 import { useMessage, type UploadCustomRequestOptions } from 'naive-ui'
 
-import { ACCEPTED_IMAGE_TYPES, MAX_IMAGE_SIZE_BYTES, uploadImage } from '@/api/files'
-import { ApiClientError } from '@/api/http'
+import { ACCEPTED_IMAGE_TYPES, MAX_IMAGE_SIZE_BYTES, uploadImage } from '@/api/resources/files'
+import { ApiClientError } from '@/api/client/http'
 
 /**
  * 圖片上傳與預覽。

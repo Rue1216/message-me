@@ -1,4 +1,4 @@
-import { http, unwrap } from '@/api/http'
+import { http, unwrap } from '@/api/client/http'
 import type { ApiResponse, CurrentUser, LoginPayload, LoginResult, RegisterPayload } from '@/types/api'
 
 /** 註冊。成功回 201，帶回新建立的個人檔案，但不含權杖。 */

@@ -1,4 +1,4 @@
-import { http, unwrap } from '@/api/http'
+import { http, unwrap } from '@/api/client/http'
 import type { ApiResponse, UploadedImage } from '@/types/api'
 
 /** 圖片格式白名單，與後端 ImageStorageService 的內容嗅探結果一致。 */

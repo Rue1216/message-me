@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatDateTime, formatRelativeTime } from '@/utils/datetime'
+import { formatDateTime, formatRelativeTime } from '@/utils/format/datetime'
 
 const now = new Date('2026-08-07T12:00:00')
 
