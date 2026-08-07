@@ -55,11 +55,11 @@
 ```mermaid
 flowchart TD
     B["瀏覽器"]
-    W["Web Server 層 — Nginx<br/>container: web · port 8080<br/>服務 Vue build 靜態檔<br/>服務 /uploads/* 圖片靜態檔（唯讀）<br/>/api/* 反向代理至 app:8081<br/>注入安全標頭 CSP / X-Frame-Options"]
+    W["Web Server 層 — Nginx<br/>container: web · port 3001<br/>服務 Vue build 靜態檔<br/>服務 /uploads/* 圖片靜態檔（唯讀）<br/>/api/* 反向代理至 app:8081<br/>注入安全標頭 CSP / X-Frame-Options"]
     A["Application Server 層 — Spring Boot 3.4<br/>container: app · port 8081<br/>展示層 / 業務層 / 資料層 / 共用層<br/>JWT 驗證、Bean Validation、Transaction<br/>寫入圖片至 uploads volume"]
     D["資料層 — MySQL 8<br/>container: db · port 3306<br/>僅開放 Stored Procedure 存取<br/>啟動時自動載入 DB/*.sql"]
 
-    B -->|"HTTP :8080"| W
+    B -->|"HTTP :3001"| W
     W -->|"HTTP :8081"| A
     A -->|"JDBC :3306"| D
 ```
@@ -88,10 +88,12 @@ flowchart TD
 ```bash
 cp .env.example .env     # 填入 JWT_SECRET 等機密設定
 docker compose up --build
-# 開啟 http://localhost:8080
+# 開啟 http://localhost:3001
 ```
 
-單獨開發時：後端 `cd backend && ./mvnw spring-boot:run`，前端 `cd frontend && npm run dev`。
+單獨開發時：後端 `cd backend && ./mvnw spring-boot:run`（8081），前端 `cd frontend && npm run dev`（3001，以 `strictPort` 固定，埠被占用即失敗而非自動換埠）。
+
+連接埠一覽：**前端 3001**（唯一對外）、**後端 8081**、資料庫 3306。容器內外使用相同埠號，不做轉換；3001 若與本機其他程式衝突，於 `.env` 調整 `WEB_PORT` 即可，容器內部仍是 3001。
 
 ---
 
@@ -350,8 +352,10 @@ COMMIT;
 
 ```json
 { "success": false, "data": null,
-  "error": { "code": "POST_NOT_FOUND", "message": "找不到指定的發文" } }
+  "error": { "code": "NOT_FOUND", "message": "找不到指定的發文" } }
 ```
+
+`data` 與 `error` 互斥，未使用的一方序列化時整個省略（`spring.jackson.default-property-inclusion: non_null`），前端可直接以 `success` 分流。錯誤代碼取自 `ErrorCode` enum 的名稱。
 
 分頁資料以 `PageResponse<T>` 包裝，含 `items`、`page`、`size`、`totalElements`、`totalPages`。
 
@@ -361,7 +365,7 @@ COMMIT;
 | --- | --- |
 | `200 OK` | 查詢、更新成功 |
 | `201 Created` | 註冊、發文、留言、上傳成功 |
-| `204 No Content` | 刪除成功 |
+| `200 OK`（無 `data`） | 刪除成功。刻意不用 `204`：`204` 依規範不得帶主體，回應就無法沿用全站統一的 `ApiResponse` 外殼，前端得為刪除多寫一條分支 |
 | `400 Bad Request` | 輸入驗證失敗 |
 | `401 Unauthorized` | 未提供 token、token 無效或已過期 |
 | `403 Forbidden` | 已登入但操作他人資源 |
@@ -416,6 +420,9 @@ docker compose exec db mysql -u app_user -p -e "SELECT * FROM users;"
 | `X-Content-Type-Options` | `nosniff` | 阻止 MIME 類型嗅探 |
 | `X-Frame-Options` | `DENY` | 防止點擊劫持 |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` | 限制 referrer 外洩 |
+| `Permissions-Policy` | 關閉相機、麥克風、定位、付款 | 即使頁面被注入內容，也無法要求這些權限 |
+
+> **實作提醒**：Nginx 的 `add_header` 不會由上層累加——只要子 `location` 自行宣告任何一道 `add_header`，上層的全部標頭都會被丟棄。`frontend/nginx.conf` 因此在每個有自訂標頭的 `location`（`/api/`、`/uploads/`、`/assets/`、`= /index.html`）重複列出所需標頭。這是 Nginx 安全設定最常見的靜默失效點。
 
 ### 7.4 密碼儲存
 
@@ -443,13 +450,19 @@ docker compose exec db mysql -u app_user -p -e "SELECT * FROM users;"
 | 欄位 | 規則 |
 | --- | --- |
 | `phoneNumber` | `^09\d{8}$`（台灣手機格式） |
-| `password` | 8–64 字元，須含英文字母與數字 |
+| `password` | 8–100 字元 |
 | `userName` | 1–50 字元，不可空白 |
-| `email` | 符合 Email 格式（選填） |
-| `content` | 1–2000 字元 |
+| `email` | 符合 Email 格式、最多 255 字元（選填） |
+| 發文 `content` | 1–5000 字元 |
+| 留言 `content` | 1–1000 字元 |
 | `biography` | 最多 500 字元 |
+| `image` / `coverImage` | 須符合 `/uploads/<UUID>.<jpg\|jpeg\|png\|webp>`，即本站上傳端點回傳的格式 |
+
+密碼**不強制**英數混合：長度是密碼強度最有效的槓桿，而複雜度規則會把使用者推向 `Password1!` 這類可預測的變形。實際的防護落在雜湊成本（PBKDF2 310,000 輪）與獨立鹽值上。
 
 驗證失敗由 `GlobalExceptionHandler` 統一轉為 `400`，並列出所有未通過的欄位與原因。
+
+前端以同一組規則（`frontend/src/utils/validation.ts`）在送出前先行提示，但那只是體驗上的及早回饋，**不是安全邊界**——繞過瀏覽器直接呼叫 API 一樣會被後端擋下。
 
 ---
 
@@ -537,7 +550,7 @@ CI（GitHub Actions）於每個 PR 自動執行後端 `./mvnw verify` 與前端 
 
 1. `cp .env.example .env` 並填入 `JWT_SECRET`
 2. `docker compose up --build`
-3. 開啟 `http://localhost:8080`，依序驗證：
+3. 開啟 `http://localhost:3001`，依序驗證：
    註冊 → 登入 → 發文（含上傳圖片）→ 編輯發文 → 留言 → 刪除發文（確認留言一併消失）→ 編輯個人檔案 → 登出
 4. 未登入狀態直接呼叫 `POST /api/posts`，應回傳 `401`
 5. 以他人帳號登入後嘗試編輯不屬於自己的發文，應回傳 `403`
