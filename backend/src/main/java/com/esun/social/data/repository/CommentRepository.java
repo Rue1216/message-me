@@ -9,6 +9,7 @@ import com.esun.social.data.support.StoredProcedureErrors;
 import java.sql.Types;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.SqlOutParameter;
 import org.springframework.jdbc.core.SqlParameter;
@@ -29,10 +30,25 @@ public class CommentRepository {
 
     private final SimpleJdbcCall createCall;
     private final SimpleJdbcCall listByPostCall;
+    private final SimpleJdbcCall findByIdCall;
     private final SimpleJdbcCall countByPostCall;
+    private final SimpleJdbcCall updateCall;
     private final SimpleJdbcCall deleteCall;
 
     public CommentRepository(StoredProcedureCallFactory callFactory) {
+        this.findByIdCall = callFactory
+                .forProcedure("sp_comment_find_by_id")
+                .declareParameters(new SqlParameter("p_comment_id", Types.BIGINT))
+                .returningResultSet(RESULT_SET_KEY, new CommentRowMapper());
+
+        this.updateCall = callFactory
+                .forProcedure("sp_comment_update")
+                .declareParameters(
+                        new SqlParameter("p_comment_id", Types.BIGINT),
+                        new SqlParameter("p_user_id", Types.BIGINT),
+                        new SqlParameter("p_content", Types.LONGVARCHAR),
+                        new SqlOutParameter("p_affected_rows", Types.INTEGER));
+
         this.createCall = callFactory
                 .forProcedure("sp_comment_create")
                 .declareParameters(
@@ -93,6 +109,28 @@ public class CommentRepository {
                 .addValue("p_offset", offset);
         List<Comment> comments = (List<Comment>) listByPostCall.execute(parameters).get(RESULT_SET_KEY);
         return comments == null ? List.of() : comments;
+    }
+
+    public Optional<Comment> findById(long commentId) {
+        @SuppressWarnings("unchecked")
+        List<Comment> comments =
+                (List<Comment>) findByIdCall.execute(new MapSqlParameterSource("p_comment_id", commentId))
+                        .get(RESULT_SET_KEY);
+        return comments == null || comments.isEmpty() ? Optional.empty() : Optional.of(comments.get(0));
+    }
+
+    /**
+     * 編輯留言，僅限留言者本人（SP 內以 {@code user_id} 比對）。
+     *
+     * @return 是否確實更新；留言不存在或不屬於此使用者時為 {@code false}
+     */
+    public boolean update(long commentId, long userId, String content) {
+        MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("p_comment_id", commentId)
+                .addValue("p_user_id", userId)
+                .addValue("p_content", content);
+        Map<String, Object> result = updateCall.execute(parameters);
+        return ((Number) result.get("p_affected_rows")).intValue() > 0;
     }
 
     public long countByPost(long postId) {

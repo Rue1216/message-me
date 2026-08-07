@@ -1,17 +1,30 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useDialog, useMessage } from 'naive-ui'
-import { useRouter } from 'vue-router'
+import { useQuery } from '@tanstack/vue-query'
+import { ArrowLeft } from '@lucide/vue'
+import { computed, ref } from 'vue'
+import { RouterLink, useRouter } from 'vue-router'
 
-import { createComment, deleteComment, fetchComments } from '@/api/resources/comments'
+import { fetchComments } from '@/api/resources/comments'
 import { ApiClientError } from '@/api/client/http'
-import { deletePost, fetchPost } from '@/api/resources/posts'
+import { fetchPost } from '@/api/resources/posts'
 import CommentForm from '@/components/comment/CommentForm.vue'
 import CommentList from '@/components/comment/CommentList.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import ErrorState from '@/components/common/ErrorState.vue'
 import PostCard from '@/components/post/PostCard.vue'
 import PostEditorModal from '@/components/post/PostEditorModal.vue'
+import PostSkeleton from '@/components/post/PostSkeleton.vue'
+import AppAlert from '@/components/ui/AppAlert.vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import AppSkeleton from '@/components/ui/AppSkeleton.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import { useCommentMutations } from '@/composables/useCommentMutations'
+import { usePostMutations } from '@/composables/usePostMutations'
+import { useToast } from '@/composables/useToast'
+import { commentKeys, postKeys } from '@/queries/queryKeys'
 import { useAuthStore } from '@/stores/auth'
-import type { Comment, Post } from '@/types/api'
+import type { Comment } from '@/types/api'
 
 /** 單篇發文與其留言。發文本身公開可讀，留言需要登入才能發表。 */
 
@@ -20,236 +33,270 @@ const COMMENT_PAGE_SIZE = 20
 // 路由以 props 傳入，型別是字串（來自網址）
 const props = defineProps<{ postId: string }>()
 
-const auth = useAuthStore()
-const router = useRouter()
-const message = useMessage()
-const dialog = useDialog()
-
 const postId = computed(() => Number(props.postId))
 
-const post = ref<Post | null>(null)
-const loadError = ref<string | null>(null)
-const loadingPost = ref(false)
+const auth = useAuthStore()
+const router = useRouter()
+const toast = useToast()
 
-const comments = ref<Comment[]>([])
 const commentPage = ref(1)
-const commentTotal = ref(0)
-const loadingComments = ref(false)
 
-const commentFormRef = ref<InstanceType<typeof CommentForm> | null>(null)
-const submittingComment = ref(false)
-const showEditor = ref(false)
-
-const canManagePost = computed(
-  () => post.value !== null && auth.currentUserId === post.value.author.userId,
-)
-
-async function loadPost(): Promise<void> {
-  loadingPost.value = true
-  loadError.value = null
-  try {
-    post.value = await fetchPost(postId.value)
-  } catch (error) {
-    loadError.value = error instanceof ApiClientError ? error.message : '載入失敗，請稍後再試'
-  } finally {
-    loadingPost.value = false
-  }
-}
-
-async function loadComments(): Promise<void> {
-  loadingComments.value = true
-  try {
-    const result = await fetchComments(postId.value, commentPage.value, COMMENT_PAGE_SIZE)
-    comments.value = result.items
-    commentTotal.value = result.totalElements
-  } catch (error) {
-    message.error(error instanceof ApiClientError ? error.message : '留言載入失敗')
-  } finally {
-    loadingComments.value = false
-  }
-}
-
-onMounted(async () => {
-  await loadPost()
-  if (post.value) {
-    await loadComments()
-  }
+const postQuery = useQuery({
+  queryKey: computed(() => postKeys.detail(postId.value)),
+  queryFn: () => fetchPost(postId.value),
 })
 
-function handleCommentPageChange(next: number): void {
-  commentPage.value = next
-  void loadComments()
+const commentsQuery = useQuery({
+  queryKey: computed(() => commentKeys.page(postId.value, commentPage.value)),
+  queryFn: () => fetchComments(postId.value, commentPage.value, COMMENT_PAGE_SIZE),
+  // 換頁時保留上一頁的內容，避免列表整個消失再出現造成的閃動
+  placeholderData: (previous) => previous,
+})
+
+const { remove: removePost } = usePostMutations()
+const comments = useCommentMutations(postId.value)
+
+const commentFormRef = ref<InstanceType<typeof CommentForm> | null>(null)
+const showEditor = ref(false)
+const showRemovePostConfirm = ref(false)
+const pendingCommentRemoval = ref<Comment | null>(null)
+const showRemoveCommentConfirm = ref(false)
+const editingCommentId = ref<number | null>(null)
+
+const canManagePost = computed(
+  () =>
+    postQuery.data.value !== undefined && auth.currentUserId === postQuery.data.value.author.userId,
+)
+
+const totalPages = computed(() => commentsQuery.data.value?.totalPages ?? 0)
+
+/**
+ * 新增留言。
+ *
+ * <p>留言由舊到新排列，新的一則落在最後。只有在它確實讓總頁數增加時才帶使用者過去——
+ * 改版前是無條件跳到最後一頁，即使使用者正在讀第一頁的討論也會被彈走。
+ */
+function handleCommentSubmit(content: string): void {
+  comments.create.mutate(content, {
+    onSuccess: () => {
+      commentFormRef.value?.reset()
+      toast.success('留言成功')
+      const total = commentsQuery.data.value?.totalElements ?? 0
+      const lastPage = Math.max(1, Math.ceil((total + 1) / COMMENT_PAGE_SIZE))
+      if (lastPage > commentPage.value) {
+        commentPage.value = lastPage
+      }
+    },
+    onError: (error) =>
+      toast.error(error instanceof ApiClientError ? error.message : '留言失敗，請稍後再試'),
+  })
 }
 
-async function handleCommentSubmit(content: string): Promise<void> {
-  submittingComment.value = true
-  try {
-    await createComment(postId.value, content)
-    commentFormRef.value?.reset()
-    message.success('留言成功')
-    // 留言由舊到新排序，新的一則落在最後一頁；連同發文的留言數一起重新取回
-    const lastPage = Math.max(1, Math.ceil((commentTotal.value + 1) / COMMENT_PAGE_SIZE))
-    commentPage.value = lastPage
-    await Promise.all([loadPost(), loadComments()])
-  } catch (error) {
-    message.error(error instanceof ApiClientError ? error.message : '留言失敗，請稍後再試')
-  } finally {
-    submittingComment.value = false
-  }
+function handleCommentUpdate({ comment, content }: { comment: Comment; content: string }): void {
+  editingCommentId.value = comment.commentId
+  comments.update.mutate(
+    { commentId: comment.commentId, content },
+    {
+      onSuccess: () => toast.success('留言已更新'),
+      onError: (error) =>
+        toast.error(error instanceof ApiClientError ? error.message : '更新失敗，請稍後再試'),
+      onSettled: () => {
+        editingCommentId.value = null
+      },
+    },
+  )
 }
 
 function confirmRemoveComment(comment: Comment): void {
-  dialog.warning({
-    title: '刪除留言',
-    content: '確定要刪除這則留言嗎？',
-    positiveText: '刪除',
-    negativeText: '取消',
-    onPositiveClick: () => {
-      void removeComment(comment)
+  pendingCommentRemoval.value = comment
+  showRemoveCommentConfirm.value = true
+}
+
+function performRemoveComment(): void {
+  const comment = pendingCommentRemoval.value
+  if (!comment) {
+    return
+  }
+  comments.remove.mutate(comment.commentId, {
+    onSuccess: () => {
+      toast.success('留言已刪除')
+      // 刪掉整頁最後一則時退回前一頁，避免停在空白頁
+      if (commentsQuery.data.value?.items.length === 1 && commentPage.value > 1) {
+        commentPage.value -= 1
+      }
     },
+    onError: (error) =>
+      toast.error(error instanceof ApiClientError ? error.message : '刪除失敗，請稍後再試'),
   })
 }
 
-async function removeComment(comment: Comment): Promise<void> {
-  try {
-    await deleteComment(comment.commentId)
-    message.success('留言已刪除')
-    // 刪掉整頁最後一則時退回前一頁，避免停在空白頁
-    if (comments.value.length === 1 && commentPage.value > 1) {
-      commentPage.value -= 1
-    }
-    await Promise.all([loadPost(), loadComments()])
-  } catch (error) {
-    message.error(error instanceof ApiClientError ? error.message : '刪除失敗，請稍後再試')
-  }
-}
-
-function confirmRemovePost(): void {
-  dialog.warning({
-    title: '刪除發文',
-    content: '刪除後這則發文與它底下的所有留言都會一併消失，確定要刪除嗎？',
-    positiveText: '刪除',
-    negativeText: '取消',
-    onPositiveClick: () => {
-      void removePost()
+function performRemovePost(): void {
+  removePost.mutate(postId.value, {
+    onSuccess: () => {
+      toast.success('發文已刪除')
+      void router.replace({ name: 'home' })
     },
+    onError: (error) =>
+      toast.error(error instanceof ApiClientError ? error.message : '刪除失敗，請稍後再試'),
   })
-}
-
-async function removePost(): Promise<void> {
-  try {
-    await deletePost(postId.value)
-    message.success('發文已刪除')
-    await router.replace({ name: 'home' })
-  } catch (error) {
-    message.error(error instanceof ApiClientError ? error.message : '刪除失敗，請稍後再試')
-  }
-}
-
-function handleUpdated(updated: Post): void {
-  post.value = updated
 }
 </script>
 
 <template>
   <section>
-    <n-button
-      quaternary
-      size="small"
-      class="back"
-      @click="router.push({ name: 'home' })"
+    <AppButton
+      variant="ghost"
+      size="sm"
+      class="mb-3"
+      @click="router.back()"
     >
-      ← 回動態牆
-    </n-button>
+      <ArrowLeft
+        class="size-4"
+        aria-hidden="true"
+      />
+      返回
+    </AppButton>
 
-    <n-spin :show="loadingPost">
-      <n-result
-        v-if="loadError"
-        status="404"
-        title="看不到這則發文"
-        :description="loadError"
-        class="load-error"
+    <PostSkeleton
+      v-if="postQuery.isPending.value"
+      :count="1"
+    />
+
+    <div v-else-if="postQuery.error.value">
+      <ErrorState
+        :error="postQuery.error.value"
+        fallback="看不到這則發文"
+        @retry="postQuery.refetch()"
+      />
+      <div class="mt-4 flex justify-center">
+        <RouterLink
+          :to="{ name: 'home' }"
+          class="text-sm text-primary hover:underline"
+        >
+          回動態牆
+        </RouterLink>
+      </div>
+    </div>
+
+    <template v-else-if="postQuery.data.value">
+      <PostCard
+        :post="postQuery.data.value"
+        :can-manage="canManagePost"
+        :link-to-detail="false"
+        @edit="showEditor = true"
+        @remove="showRemovePostConfirm = true"
       />
 
-      <template v-else-if="post">
-        <PostCard
-          :post="post"
-          :can-manage="canManagePost"
-          :link-to-detail="false"
-          @edit="showEditor = true"
-          @remove="confirmRemovePost"
+      <AppCard
+        as="section"
+        class="p-4"
+        aria-labelledby="comments-heading"
+      >
+        <h2
+          id="comments-heading"
+          class="mb-3 font-semibold"
+        >
+          留言 {{ postQuery.data.value.commentCount }}
+        </h2>
+
+        <CommentForm
+          v-if="auth.isAuthenticated"
+          ref="commentFormRef"
+          :submitting="comments.create.isPending.value"
+          @submit="handleCommentSubmit"
+        />
+        <AppAlert v-else>
+          <RouterLink
+            :to="{ name: 'login' }"
+            class="font-medium text-primary hover:underline"
+          >
+            登入
+          </RouterLink>
+          後即可留言。
+        </AppAlert>
+
+        <div class="my-4 h-px bg-border" />
+
+        <div
+          v-if="commentsQuery.isPending.value"
+          class="flex flex-col gap-4"
+          aria-busy="true"
+        >
+          <div
+            v-for="n in 3"
+            :key="n"
+            class="flex gap-3"
+          >
+            <AppSkeleton class="size-7 rounded-full" />
+            <div class="flex flex-1 flex-col gap-1.5">
+              <AppSkeleton class="h-3 w-24" />
+              <AppSkeleton class="h-4 w-3/4" />
+            </div>
+          </div>
+        </div>
+
+        <EmptyState
+          v-else-if="!commentsQuery.data.value?.items.length"
+          title="還沒有留言"
+          description="來當第一個吧。"
         />
 
-        <n-card
-          :bordered="false"
-          title="留言"
+        <CommentList
+          v-else
+          :comments="commentsQuery.data.value.items"
+          :manageable-user-id="auth.currentUserId"
+          :submitting-id="editingCommentId"
+          @remove="confirmRemoveComment"
+          @update="handleCommentUpdate"
+        />
+
+        <nav
+          v-if="totalPages > 1"
+          class="mt-4 flex items-center justify-center gap-2"
+          aria-label="留言分頁"
         >
-          <CommentForm
-            v-if="auth.isAuthenticated"
-            ref="commentFormRef"
-            :submitting="submittingComment"
-            @submit="handleCommentSubmit"
-          />
-          <n-alert
-            v-else
-            type="default"
+          <AppButton
+            variant="outline"
+            size="sm"
+            :disabled="commentPage <= 1"
+            @click="commentPage -= 1"
           >
-            <RouterLink :to="{ name: 'login' }">
-              登入
-            </RouterLink>
-            後即可留言。
-          </n-alert>
-
-          <n-divider />
-
-          <n-spin :show="loadingComments">
-            <n-empty
-              v-if="!loadingComments && comments.length === 0"
-              description="還沒有留言，來當第一個吧"
-            />
-            <CommentList
-              v-else
-              :comments="comments"
-              :manageable-user-id="auth.currentUserId"
-              @remove="confirmRemoveComment"
-            />
-          </n-spin>
-
-          <div
-            v-if="commentTotal > COMMENT_PAGE_SIZE"
-            class="pagination"
+            上一頁
+          </AppButton>
+          <span class="text-sm text-muted-foreground">
+            第 {{ commentPage }} / {{ totalPages }} 頁
+          </span>
+          <AppButton
+            variant="outline"
+            size="sm"
+            :disabled="commentPage >= totalPages"
+            @click="commentPage += 1"
           >
-            <n-pagination
-              :page="commentPage"
-              :page-size="COMMENT_PAGE_SIZE"
-              :item-count="commentTotal"
-              @update:page="handleCommentPageChange"
-            />
-          </div>
-        </n-card>
-      </template>
-    </n-spin>
+            下一頁
+          </AppButton>
+        </nav>
+      </AppCard>
+    </template>
 
     <PostEditorModal
-      v-model:show="showEditor"
-      :post="post"
-      @updated="handleUpdated"
+      v-model:open="showEditor"
+      :post="postQuery.data.value ?? null"
+    />
+
+    <ConfirmDialog
+      v-model:open="showRemovePostConfirm"
+      title="刪除發文"
+      description="刪除後這則發文與它底下的所有留言、按讚都會一併消失，且無法復原。"
+      confirm-label="刪除"
+      @confirm="performRemovePost"
+    />
+
+    <ConfirmDialog
+      v-model:open="showRemoveCommentConfirm"
+      title="刪除留言"
+      description="確定要刪除這則留言嗎？此操作無法復原。"
+      confirm-label="刪除"
+      @confirm="performRemoveComment"
     />
   </section>
 </template>
-
-<style scoped>
-.back {
-  margin-bottom: 0.75rem;
-}
-
-.load-error {
-  padding: 2.5rem 0;
-}
-
-.pagination {
-  display: flex;
-  justify-content: center;
-  margin-top: 1rem;
-}
-</style>

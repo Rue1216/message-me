@@ -1,9 +1,11 @@
 package com.esun.social.data.repository;
 
+import com.esun.social.business.model.Activity;
 import com.esun.social.business.model.User;
 import com.esun.social.business.model.UserCredentials;
 import com.esun.social.common.exception.BusinessException;
 import com.esun.social.common.exception.ErrorCode;
+import com.esun.social.data.rowmapper.ActivityRowMapper;
 import com.esun.social.data.rowmapper.UserCredentialsRowMapper;
 import com.esun.social.data.rowmapper.UserRowMapper;
 import com.esun.social.data.support.StoredProcedureCallFactory;
@@ -29,13 +31,52 @@ import org.springframework.stereotype.Repository;
 public class UserRepository {
 
     private static final String RESULT_SET_KEY = "users";
+    private static final String ACTIVITY_RESULT_SET_KEY = "activities";
 
     private final SimpleJdbcCall registerCall;
     private final SimpleJdbcCall findByPhoneCall;
     private final SimpleJdbcCall findByIdCall;
+    private final SimpleJdbcCall findCredentialsByIdCall;
     private final SimpleJdbcCall updateProfileCall;
+    private final SimpleJdbcCall changePasswordCall;
+    private final SimpleJdbcCall softDeleteCall;
+    private final SimpleJdbcCall activityListCall;
+    private final SimpleJdbcCall activityCountCall;
 
     public UserRepository(StoredProcedureCallFactory callFactory) {
+        this.findCredentialsByIdCall = callFactory
+                .forProcedure("sp_user_find_credentials_by_id")
+                .declareParameters(new SqlParameter("p_user_id", Types.BIGINT))
+                .returningResultSet(RESULT_SET_KEY, new UserCredentialsRowMapper());
+
+        this.changePasswordCall = callFactory
+                .forProcedure("sp_user_change_password")
+                .declareParameters(
+                        new SqlParameter("p_user_id", Types.BIGINT),
+                        new SqlParameter("p_password_hash", Types.VARCHAR),
+                        new SqlParameter("p_password_salt", Types.VARCHAR),
+                        new SqlOutParameter("p_affected_rows", Types.INTEGER));
+
+        this.softDeleteCall = callFactory
+                .forProcedure("sp_user_soft_delete")
+                .declareParameters(
+                        new SqlParameter("p_user_id", Types.BIGINT),
+                        new SqlParameter("p_anonymized_name", Types.VARCHAR),
+                        new SqlOutParameter("p_affected_rows", Types.INTEGER));
+
+        this.activityListCall = callFactory
+                .forProcedure("sp_user_activity_list")
+                .declareParameters(
+                        new SqlParameter("p_user_id", Types.BIGINT),
+                        new SqlParameter("p_limit", Types.INTEGER),
+                        new SqlParameter("p_offset", Types.INTEGER))
+                .returningResultSet(ACTIVITY_RESULT_SET_KEY, new ActivityRowMapper());
+
+        this.activityCountCall = callFactory
+                .forProcedure("sp_user_activity_count")
+                .declareParameters(
+                        new SqlParameter("p_user_id", Types.BIGINT), new SqlOutParameter("p_total", Types.BIGINT));
+
         this.registerCall = callFactory
                 .forProcedure("sp_user_register")
                 .declareParameters(
@@ -122,6 +163,62 @@ public class UserRepository {
                 .addValue("p_cover_image", coverImage);
         Map<String, Object> result = updateProfileCall.execute(parameters);
         return ((Number) result.get("p_affected_rows")).intValue() > 0;
+    }
+
+    /**
+     * 依 ID 查詢，含密碼雜湊與鹽。僅供「修改密碼時驗證舊密碼」使用。
+     *
+     * <p>與 {@link #findByPhoneNumber} 並列為僅有的兩條會取得憑證的路徑，兩者都由專屬的 SP 支援，
+     * 使敏感欄位的流通範圍在資料層即可一眼盤點。
+     */
+    public Optional<UserCredentials> findCredentialsById(long userId) {
+        Map<String, Object> result = findCredentialsByIdCall.execute(new MapSqlParameterSource("p_user_id", userId));
+        return firstOf(result);
+    }
+
+    /**
+     * 更新密碼雜湊與鹽。鹽一併更換，理由見 {@code sp_user_change_password} 的註解。
+     *
+     * @return 是否確實更新；使用者不存在或已刪除時為 {@code false}
+     */
+    public boolean changePassword(long userId, String passwordHash, String passwordSalt) {
+        MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("p_user_id", userId)
+                .addValue("p_password_hash", passwordHash)
+                .addValue("p_password_salt", passwordSalt);
+        Map<String, Object> result = changePasswordCall.execute(parameters);
+        return ((Number) result.get("p_affected_rows")).intValue() > 0;
+    }
+
+    /**
+     * 軟刪除帳號並匿名化身分欄位。發文與留言原樣保留。
+     *
+     * @param anonymizedName 取代原使用者名稱的顯示字串。文案屬於應用層的決定，不寫死在 SQL 中
+     * @return 是否確實刪除；使用者不存在或已刪除時為 {@code false}（重複刪除為 no-op）
+     */
+    public boolean softDelete(long userId, String anonymizedName) {
+        MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("p_user_id", userId)
+                .addValue("p_anonymized_name", anonymizedName);
+        Map<String, Object> result = softDeleteCall.execute(parameters);
+        return ((Number) result.get("p_affected_rows")).intValue() > 0;
+    }
+
+    /** 某使用者的發文與留言合併時間軸，新到舊。 */
+    @SuppressWarnings("unchecked")
+    public List<Activity> findActivityPage(long userId, int limit, int offset) {
+        MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("p_user_id", userId)
+                .addValue("p_limit", limit)
+                .addValue("p_offset", offset);
+        List<Activity> activities =
+                (List<Activity>) activityListCall.execute(parameters).get(ACTIVITY_RESULT_SET_KEY);
+        return activities == null ? List.of() : activities;
+    }
+
+    public long countActivities(long userId) {
+        Map<String, Object> result = activityCountCall.execute(new MapSqlParameterSource("p_user_id", userId));
+        return ((Number) result.get("p_total")).longValue();
     }
 
     @SuppressWarnings("unchecked")

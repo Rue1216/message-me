@@ -1,150 +1,218 @@
 <script setup lang="ts">
-import { useMessage, type DropdownOption } from 'naive-ui'
-import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { Home, LogOut, Search, User, Settings } from "@lucide/vue";
+import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuPortal,
+  DropdownMenuRoot,
+  DropdownMenuTrigger,
+} from "reka-ui";
+import { ref, watch } from "vue";
+import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 
-import UserAvatar from '@/components/user/UserAvatar.vue'
-import { useAuthStore } from '@/stores/auth'
+import PopularTags from "@/components/tag/PopularTags.vue";
+import ThemeToggle from "@/components/layout/ThemeToggle.vue";
+import UserAvatar from "@/components/user/UserAvatar.vue";
+import AppButton from "@/components/ui/AppButton.vue";
+import AppInput from "@/components/ui/AppInput.vue";
+import { useToast } from "@/composables/useToast";
+import { useAuthStore } from "@/stores/auth";
 
 /**
- * 全站版面：頁首導覽列 + 內容區。
+ * 全站版面。
  *
- * 導覽列右側依登入狀態切換：未登入顯示登入 / 註冊，已登入顯示頭像下拉選單。
+ * <p>桌機為雙欄（主內容 + 熱門標籤側欄），手機收成單欄並在底部提供導覽列——
+ * 拇指構不到頂端，把主要動作放在下方是行動裝置上的常識。
+ *
+ * <p>頁首含 skip link：鍵盤使用者不必每頁都先 Tab 過整條導覽列才能到達內容。
  */
+const auth = useAuthStore();
+const router = useRouter();
+const route = useRoute();
+const toast = useToast();
 
-const auth = useAuthStore()
-const router = useRouter()
-const message = useMessage()
+const keyword = ref(typeof route.query.q === "string" ? route.query.q : "");
 
-const userMenuOptions: DropdownOption[] = [
-  { key: 'profile', label: '個人檔案' },
-  { key: 'divider', type: 'divider' },
-  { key: 'logout', label: '登出' },
-]
+// 從搜尋頁離開時清空輸入框，避免在別的頁面看到殘留的關鍵字
+watch(
+  () => route.fullPath,
+  () => {
+    if (route.name !== "search") {
+      keyword.value = "";
+    }
+  },
+);
 
-function handleUserMenuSelect(key: string): void {
-  if (key === 'profile') {
-    void router.push({ name: 'profile' })
-    return
+function submitSearch(): void {
+  const trimmed = keyword.value.trim();
+  if (trimmed) {
+    void router.push({ name: "search", query: { q: trimmed } });
   }
-  if (key === 'logout') {
-    auth.signOut()
-    message.success('已登出')
-    void router.push({ name: 'home' })
-  }
+}
+
+function signOut(): void {
+  auth.signOut();
+  toast.success("已登出");
+  void router.push({ name: "home" });
 }
 </script>
 
 <template>
-  <n-layout position="absolute">
-    <n-layout-header
-      bordered
-      class="app-header"
-    >
-      <div class="app-header__inner">
-        <RouterLink
-          :to="{ name: 'home' }"
-          class="brand"
-        >
-          Message Me
-        </RouterLink>
+  <a
+    href="#main-content"
+    class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-card focus:px-4 focus:py-2 focus:shadow-lg"
+  >
+    跳到主要內容
+  </a>
 
-        <nav class="app-header__actions">
-          <n-dropdown
-            v-if="auth.isAuthenticated"
-            trigger="click"
-            :options="userMenuOptions"
-            @select="handleUserMenuSelect"
+  <header
+    class="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur"
+  >
+    <div class="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
+      <RouterLink
+        :to="{ name: 'home' }"
+        class="shrink-0 text-lg font-bold tracking-tight"
+      >
+        Message Me
+      </RouterLink>
+
+      <form
+        class="ml-auto hidden max-w-xs flex-1 sm:block"
+        role="search"
+        @submit.prevent="submitSearch"
+      >
+        <label for="global-search" class="sr-only">搜尋發文</label>
+        <div class="relative">
+          <Search
+            class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <AppInput
+            id="global-search"
+            v-model="keyword"
+            type="search"
+            placeholder="搜尋發文或標籤…"
+            class="h-9 pl-8"
+          />
+        </div>
+      </form>
+
+      <nav class="ml-auto flex items-center gap-1 sm:ml-0">
+        <ThemeToggle />
+
+        <DropdownMenuRoot v-if="auth.isAuthenticated">
+          <DropdownMenuTrigger
+            class="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-muted"
+            aria-label="開啟使用者選單"
           >
-            <n-button quaternary>
-              <span class="user-trigger">
-                <UserAvatar
-                  :name="auth.user?.userName ?? ''"
-                  :image="auth.user?.coverImage ?? null"
-                  :size="30"
-                />
-                <span class="user-trigger__name">{{ auth.user?.userName }}</span>
-              </span>
-            </n-button>
-          </n-dropdown>
-
-          <template v-else>
-            <n-button
-              quaternary
-              @click="router.push({ name: 'login' })"
+            <UserAvatar
+              :name="auth.user?.userName ?? ''"
+              :image="auth.user?.coverImage ?? null"
+              size="sm"
+            />
+            <span class="hidden max-w-32 truncate text-sm sm:inline">{{
+              auth.user?.userName
+            }}</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuContent
+              class="z-50 min-w-44 rounded-md border border-border bg-card p-1 shadow-lg"
+              :side-offset="6"
+              align="end"
             >
-              登入
-            </n-button>
-            <n-button
-              type="primary"
-              @click="router.push({ name: 'register' })"
-            >
-              註冊
-            </n-button>
-          </template>
-        </nav>
-      </div>
-    </n-layout-header>
+              <DropdownMenuItem
+                class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none data-highlighted:bg-muted"
+                @select="router.push({ name: 'profile' })"
+              >
+                <User class="size-4" aria-hidden="true" />
+                個人檔案
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none data-highlighted:bg-muted"
+                @select="router.push({ name: 'account-settings' })"
+              >
+                <Settings class="size-4" aria-hidden="true" />
+                帳號設定
+              </DropdownMenuItem>
+              <div class="my-1 h-px bg-border" />
+              <DropdownMenuItem
+                class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-destructive outline-none data-highlighted:bg-muted"
+                @select="signOut"
+              >
+                <LogOut class="size-4" aria-hidden="true" />
+                登出
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenuPortal>
+        </DropdownMenuRoot>
 
-    <n-layout-content
-      class="app-content"
-      :native-scrollbar="false"
-    >
-      <div class="app-content__inner">
-        <RouterView />
-      </div>
-    </n-layout-content>
-  </n-layout>
+        <template v-else>
+          <AppButton
+            variant="ghost"
+            size="sm"
+            @click="router.push({ name: 'login' })"
+          >
+            登入
+          </AppButton>
+          <AppButton size="sm" @click="router.push({ name: 'register' })">
+            註冊
+          </AppButton>
+        </template>
+      </nav>
+    </div>
+  </header>
+
+  <div class="mx-auto flex max-w-5xl gap-6 px-4 pb-24 pt-5 sm:pb-12">
+    <main id="main-content" class="min-w-0 flex-1">
+      <RouterView />
+    </main>
+
+    <!-- 側欄只在桌機出現：手機的螢幕寬度該全部留給內容 -->
+    <aside class="hidden w-64 shrink-0 lg:block">
+      <PopularTags />
+    </aside>
+  </div>
+
+  <!-- 手機底部導覽：主要動作放在拇指構得到的位置 -->
+  <nav
+    class="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background sm:hidden"
+    aria-label="主要導覽"
+  >
+    <div class="flex h-16 items-center justify-around">
+      <RouterLink
+        :to="{ name: 'home' }"
+        class="flex flex-col items-center gap-0.5 px-4 py-2 text-xs text-muted-foreground"
+        active-class="text-primary"
+      >
+        <Home class="size-5" aria-hidden="true" />
+        動態牆
+      </RouterLink>
+      <RouterLink
+        :to="{ name: 'search' }"
+        class="flex flex-col items-center gap-0.5 px-4 py-2 text-xs text-muted-foreground"
+        active-class="text-primary"
+      >
+        <Search class="size-5" aria-hidden="true" />
+        搜尋
+      </RouterLink>
+      <RouterLink
+        v-if="auth.isAuthenticated"
+        :to="{ name: 'profile' }"
+        class="flex flex-col items-center gap-0.5 px-4 py-2 text-xs text-muted-foreground"
+        active-class="text-primary"
+      >
+        <User class="size-5" aria-hidden="true" />
+        我的
+      </RouterLink>
+      <RouterLink
+        v-else
+        :to="{ name: 'login' }"
+        class="flex flex-col items-center gap-0.5 px-4 py-2 text-xs text-muted-foreground"
+        active-class="text-primary"
+      >
+        <User class="size-5" aria-hidden="true" />
+        登入
+      </RouterLink>
+    </div>
+  </nav>
 </template>
-
-<style scoped>
-.app-header {
-  height: 56px;
-}
-
-.app-header__inner {
-  align-items: center;
-  display: flex;
-  height: 56px;
-  justify-content: space-between;
-  margin: 0 auto;
-  max-width: var(--app-max-width);
-  padding: 0 var(--app-gutter);
-}
-
-.brand {
-  color: inherit;
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  text-decoration: none;
-}
-
-.app-header__actions {
-  align-items: center;
-  display: flex;
-  gap: 0.5rem;
-}
-
-.app-content {
-  top: 56px;
-}
-
-.app-content__inner {
-  margin: 0 auto;
-  max-width: var(--app-max-width);
-  padding: 1.25rem var(--app-gutter) 3rem;
-}
-
-.user-trigger {
-  align-items: center;
-  display: inline-flex;
-  gap: 0.5rem;
-}
-
-.user-trigger__name {
-  max-width: 8rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-</style>

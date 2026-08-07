@@ -20,9 +20,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class CommentService {
 
-    /** 新增留言後回頭尋找它時，往回撈的筆數。 */
-    private static final int TAIL_WINDOW_SIZE = 20;
-
     private final CommentRepository commentRepository;
     private final PostRepository postRepository;
     private final HtmlSanitizer htmlSanitizer;
@@ -47,7 +44,7 @@ public class CommentService {
         requirePostExists(postId);
 
         long commentId = commentRepository.create(postId, userId, requireContent(content));
-        return findInPost(postId, commentId);
+        return findById(commentId);
     }
 
     /**
@@ -65,38 +62,60 @@ public class CommentService {
     }
 
     /**
+     * @throws BusinessException 找不到該留言
+     */
+    public Comment findById(long commentId) {
+        return commentRepository
+                .findById(commentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "找不到這則留言"));
+    }
+
+    /**
+     * 編輯留言，僅限留言者本人。
+     *
+     * @throws BusinessException 留言不存在（404）或不屬於此使用者（403）
+     */
+    public Comment update(long commentId, long userId, String content) {
+        requireOwnership(commentId, userId);
+
+        if (!commentRepository.update(commentId, userId, requireContent(content))) {
+            // 兩次查詢之間留言被刪掉的競態；SP 的 user_id 比對是這條路徑的第二道關卡
+            throw new BusinessException(ErrorCode.NOT_FOUND, "找不到這則留言");
+        }
+        return findById(commentId);
+    }
+
+    /**
      * 刪除留言，僅限留言者本人。
      *
-     * <p>留言沒有單筆查詢的 Stored Procedure，因此無法像發文那樣區分「不存在」與「不是你的」——
-     * 兩種情形一律回 404。這對呼叫端反而更保守：外人無從得知某則留言是否存在。
-     *
-     * @throws BusinessException 留言不存在或不屬於此使用者
+     * @throws BusinessException 留言不存在（404）或不屬於此使用者（403）
      */
     public void delete(long commentId, long userId) {
+        requireOwnership(commentId, userId);
+
         if (!commentRepository.delete(commentId, userId)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "找不到這則留言");
         }
     }
 
-    private void requirePostExists(long postId) {
-        if (postRepository.findById(postId).isEmpty()) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "找不到這篇發文");
+    /**
+     * 權限檢查的兩層結構與發文相同：先查出留言才能區分 404 與 403，
+     * SP 內的 {@code user_id} 比對則保證即使這層被繞過也改不到別人的資料。
+     *
+     * <p>對外揭露「這則留言存在但不是你的」不構成資訊洩漏：留言本來就是公開可讀的，
+     * 任何人打開該篇發文都看得到它。
+     */
+    private void requireOwnership(long commentId, long userId) {
+        if (!findById(commentId).isOwnedBy(userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "只能編輯或刪除自己的留言");
         }
     }
 
-    /**
-     * 新增後把剛寫入的那則撈回來，讓回應帶有資料庫產生的時間與 JOIN 出來的作者資訊。
-     *
-     * <p>留言依時間由舊到新排列，新增的那則必定落在最後。這裡取末端一小段而非只取最後一筆，
-     * 是為了容忍同一瞬間有別人也在留言的情況——只取一筆的話，別人的留言會把它擠掉。
-     */
-    private Comment findInPost(long postId, long commentId) {
-        long total = commentRepository.countByPost(postId);
-        int offset = (int) Math.max(0, total - TAIL_WINDOW_SIZE);
-        return commentRepository.findPageByPost(postId, TAIL_WINDOW_SIZE, offset).stream()
-                .filter(comment -> comment.commentId() == commentId)
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("剛新增的留言 " + commentId + " 查不到"));
+    private void requirePostExists(long postId) {
+        // 這裡不在意觀看者是誰，只是確認發文存在，因此 viewerId 傳 null
+        if (postRepository.findById(null, postId).isEmpty()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "找不到這篇發文");
+        }
     }
 
     private String requireContent(String content) {

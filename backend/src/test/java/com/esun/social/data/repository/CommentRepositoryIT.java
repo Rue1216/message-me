@@ -38,7 +38,7 @@ class CommentRepositoryIT extends MySqlContainerSupport {
     @BeforeEach
     void createPost() {
         authorId = userRepository.register(TestData.uniquePhoneNumber(), "發文者", null, "hash", "salt");
-        postId = postRepository.create(authorId, "可以留言的發文", null);
+        postId = postRepository.create(authorId, "可以留言的發文", null, java.util.List.of());
     }
 
     @Test
@@ -140,7 +140,7 @@ class CommentRepositoryIT extends MySqlContainerSupport {
 
             assertThat(postRepository.delete(postId, authorId)).isTrue();
 
-            assertThat(postRepository.findById(postId)).isEmpty();
+            assertThat(postRepository.findById(null, postId)).isEmpty();
             assertThat(commentRepository.countByPost(postId)).isZero();
         }
 
@@ -160,13 +160,13 @@ class CommentRepositoryIT extends MySqlContainerSupport {
 
             assertThat(postRepository.delete(postId, strangerId)).isFalse();
 
-            assertThat(postRepository.findById(postId)).isPresent();
+            assertThat(postRepository.findById(null, postId)).isPresent();
             assertThat(commentRepository.countByPost(postId)).isEqualTo(2);
             assertThat(commentCountOfPost()).isEqualTo(2);
         }
     }
 
     private int commentCountOfPost() {
-        return postRepository.findById(postId).map(Post::commentCount).orElseThrow();
+        return postRepository.findById(null, postId).map(Post::commentCount).orElseThrow();
     }
 }

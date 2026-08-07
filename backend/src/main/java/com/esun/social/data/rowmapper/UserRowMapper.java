@@ -19,6 +19,7 @@ public class UserRowMapper implements RowMapper<User> {
                 rs.getString("cover_image"),
                 rs.getString("biography"),
                 rs.getObject("created_at", LocalDateTime.class),
-                rs.getObject("updated_at", LocalDateTime.class));
+                rs.getObject("updated_at", LocalDateTime.class),
+                rs.getObject("deleted_at", LocalDateTime.class));
     }
 }

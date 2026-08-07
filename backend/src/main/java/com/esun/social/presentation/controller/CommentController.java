@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -57,6 +58,16 @@ public class CommentController {
             @Valid @RequestBody CommentRequest request) {
         Comment created = commentService.create(postId, principal.userId(), request.content());
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(CommentResponse.from(created)));
+    }
+
+    /** 編輯留言，僅限本人。與刪除同理只需要留言 ID。 */
+    @PutMapping("/api/comments/{commentId}")
+    public ApiResponse<CommentResponse> update(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long commentId,
+            @Valid @RequestBody CommentRequest request) {
+        Comment updated = commentService.update(commentId, principal.userId(), request.content());
+        return ApiResponse.success(CommentResponse.from(updated));
     }
 
     @DeleteMapping("/api/comments/{commentId}")

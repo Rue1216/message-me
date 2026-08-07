@@ -65,9 +65,13 @@ public class SecurityConfig {
                         // 必須排在 /api/users/* 之前，否則會被萬用字元規則吃掉而變成公開
                         .requestMatchers(HttpMethod.GET, "/api/users/me")
                         .authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/users/*")
+                        .requestMatchers(HttpMethod.GET, "/api/users/*", "/api/users/*/activities")
                         .permitAll()
+                        // /api/posts/search 與 /api/posts/{postId} 都符合 /api/posts/*，
+                        // 兩者的存取原則相同（公開），因此不需要拆開。
                         .requestMatchers(HttpMethod.GET, "/api/posts", "/api/posts/*", "/api/posts/*/comments")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/tags/popular", "/api/tags/*/posts")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/uploads/**")
                         .permitAll()

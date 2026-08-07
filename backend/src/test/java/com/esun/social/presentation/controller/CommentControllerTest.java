@@ -41,7 +41,16 @@ class CommentControllerTest {
     private static final long USER_ID = 7L;
 
     private static final Comment COMMENT =
-            new Comment(5L, 1L, USER_ID, "同意", LocalDateTime.of(2026, 1, 1, 10, 0), "王小明", null);
+            new Comment(
+                    5L,
+                    1L,
+                    USER_ID,
+                    "同意",
+                    LocalDateTime.of(2026, 1, 1, 10, 0),
+                    LocalDateTime.of(2026, 1, 1, 10, 0),
+                    "王小明",
+                    null,
+                    false);
 
     @Autowired
     private MockMvc mockMvc;

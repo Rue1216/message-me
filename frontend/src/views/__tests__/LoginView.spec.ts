@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { NMessageProvider } from 'naive-ui'
 
 import { login } from '@/api/resources/auth'
 import { ApiClientError } from '@/api/client/http'
@@ -14,6 +12,17 @@ import type { LoginResult } from '@/types/api'
 vi.mock('@/api/resources/auth', () => ({
   login: vi.fn(),
   register: vi.fn(),
+}))
+
+/**
+ * 提示訊息在測試中不需要真的渲染出來。
+ *
+ * 改版前這裡必須把頁面包進 NMessageProvider 才能呼叫 useMessage()；
+ * 現在的 useToast 不依賴 provider，只需要把底層的 vue-sonner 換成空實作即可。
+ */
+vi.mock('vue-sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+  Toaster: { template: '<div />' },
 }))
 
 const loginMock = vi.mocked(login)
@@ -31,15 +40,10 @@ const loginResult: LoginResult = {
   },
 }
 
-/** useMessage() 必須在 provider 之下呼叫，因此測試裡把頁面包一層。 */
-const Host = defineComponent({
-  render: () => h(NMessageProvider, null, { default: () => h(LoginView) }),
-})
-
 async function mountLoginView() {
   await router.replace('/login')
   await router.isReady()
-  const wrapper = mount(Host, { global: { plugins: [router] }, attachTo: document.body })
+  const wrapper = mount(LoginView, { global: { plugins: [router] }, attachTo: document.body })
   await flushPromises()
   return wrapper
 }

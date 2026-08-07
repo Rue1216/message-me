@@ -1,53 +1,50 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useMessage } from 'naive-ui'
-
-import { updatePost } from '@/api/resources/posts'
 import { ApiClientError } from '@/api/client/http'
 import PostForm from '@/components/post/PostForm.vue'
+import AppDialog from '@/components/ui/AppDialog.vue'
+import { usePostMutations } from '@/composables/usePostMutations'
+import { useToast } from '@/composables/useToast'
 import type { Post, PostPayload } from '@/types/api'
 
 /**
  * 編輯發文的對話框。
  *
- * 後端的 PUT 為全欄位取代語意：不帶 image 就等於把圖片移除，表單因此把原本的圖片
+ * <p>後端的 PUT 為全欄位取代語意：不帶 image 就等於把圖片移除，表單因此把原本的圖片
  * 一併帶進來當初始值，使用者沒動它就會原樣送回去。
+ *
+ * <p>更新走 usePostMutations，成功後由它負責讓相關查詢失效——
+ * 因此不需要再向父層回報結果，父層也不必自己更新列表。
  */
-const props = defineProps<{ show: boolean; post: Post | null }>()
+const props = defineProps<{ post: Post | null }>()
 
-const emit = defineEmits<{
-  'update:show': [value: boolean]
-  updated: [post: Post]
-}>()
+const open = defineModel<boolean>('open', { required: true })
 
-const message = useMessage()
-const submitting = ref(false)
+const toast = useToast()
+const { update } = usePostMutations()
 
-async function handleSubmit(payload: PostPayload): Promise<void> {
+function handleSubmit(payload: PostPayload): void {
   if (!props.post) {
     return
   }
-  submitting.value = true
-  try {
-    const updated = await updatePost(props.post.postId, payload)
-    message.success('發文已更新')
-    emit('updated', updated)
-    emit('update:show', false)
-  } catch (error) {
-    message.error(error instanceof ApiClientError ? error.message : '更新失敗，請稍後再試')
-  } finally {
-    submitting.value = false
-  }
+  update.mutate(
+    { postId: props.post.postId, payload },
+    {
+      onSuccess: () => {
+        toast.success('發文已更新')
+        open.value = false
+      },
+      onError: (error) => {
+        toast.error(error instanceof ApiClientError ? error.message : '更新失敗，請稍後再試')
+      },
+    },
+  )
 }
 </script>
 
 <template>
-  <n-modal
-    :show="show"
-    preset="card"
+  <AppDialog
+    v-model:open="open"
     title="編輯發文"
-    class="post-editor-modal"
-    @update:show="emit('update:show', $event)"
   >
     <!--
       key 綁定發文 ID：換一則發文編輯時強制重建表單，
@@ -59,15 +56,8 @@ async function handleSubmit(payload: PostPayload): Promise<void> {
       :initial-content="post.content"
       :initial-image="post.image ?? null"
       submit-label="儲存"
-      :submitting="submitting"
+      :submitting="update.isPending.value"
       @submit="handleSubmit"
     />
-  </n-modal>
+  </AppDialog>
 </template>
-
-<style scoped>
-.post-editor-modal {
-  max-width: 34rem;
-  width: 90vw;
-}
-</style>

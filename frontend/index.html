@@ -4,7 +4,14 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Message Me</title>
+    <!--
+      深色模式的首屏套用。必須同步載入（不加 defer）才能趕在第一次繪製之前，
+      否則深色使用者會看到一瞬間的白底。內容見 public/theme-init.js，
+      獨立成檔是為了符合 script-src 'self'——inline script 會被 CSP 擋下。
+    -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="app"></div>

@@ -3,12 +3,14 @@ package com.esun.social.data.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.esun.social.business.model.Activity;
 import com.esun.social.business.model.User;
 import com.esun.social.business.model.UserCredentials;
 import com.esun.social.common.exception.BusinessException;
 import com.esun.social.common.exception.ErrorCode;
 import com.esun.social.support.MySqlContainerSupport;
 import com.esun.social.support.TestData;
+import java.util.List;
 import java.util.Optional;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.DisplayName;
@@ -19,6 +21,12 @@ class UserRepositoryIT extends MySqlContainerSupport {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private PostRepository postRepository;
+
+    @Autowired
+    private CommentRepository commentRepository;
 
     @Test
     @DisplayName("註冊後可依手機號碼取回使用者與其密碼憑證")
@@ -118,5 +126,104 @@ class UserRepositoryIT extends MySqlContainerSupport {
         // '%' 在參數繫結下就只是一個普通字元，不會比對到任何人
         assertThat(userRepository.findByPhoneNumber("%")).isEmpty();
         assertThat(userRepository.findByPhoneNumber("' OR '1'='1")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("修改密碼後舊憑證失效、新憑證生效")
+    void changesPassword() {
+        String phone = TestData.uniquePhoneNumber();
+        long userId = userRepository.register(phone, "改密碼的人", null, "oldHash", "oldSalt");
+
+        assertThat(userRepository.changePassword(userId, "newHash", "newSalt")).isTrue();
+
+        assertThat(userRepository.findCredentialsById(userId)).get().satisfies(credentials -> {
+            assertThat(credentials.passwordHash()).isEqualTo("newHash");
+            assertThat(credentials.passwordSalt()).isEqualTo("newSalt");
+        });
+    }
+
+    @Test
+    @DisplayName("軟刪除會匿名化身分欄位，但保留該使用者的發文")
+    void softDeleteAnonymisesButKeepsContent() {
+        String phone = TestData.uniquePhoneNumber();
+        long userId = userRepository.register(phone, "即將離開的人", "bye@example.com", "hash", "salt");
+        long postId = postRepository.create(userId, "我的發文還在", null, List.of());
+
+        assertThat(userRepository.softDelete(userId, "已刪除的使用者")).isTrue();
+
+        assertThat(userRepository.findById(userId)).get().satisfies(user -> {
+            assertThat(user.isDeleted()).isTrue();
+            assertThat(user.userName()).isEqualTo("已刪除的使用者");
+            assertThat(user.email()).isNull();
+            assertThat(user.biography()).isNull();
+            assertThat(user.coverImage()).isNull();
+            assertThat(user.phoneNumber()).isNotEqualTo(phone);
+        });
+
+        // 發文保留，且作者名稱已是匿名字串
+        assertThat(postRepository.findById(null, postId)).get().satisfies(post -> {
+            assertThat(post.content()).isEqualTo("我的發文還在");
+            assertThat(post.authorName()).isEqualTo("已刪除的使用者");
+            assertThat(post.authorDeleted()).isTrue();
+        });
+    }
+
+    @Test
+    @DisplayName("軟刪除後無法再登入，重複刪除為 no-op")
+    void softDeletedUserCannotLogIn() {
+        String phone = TestData.uniquePhoneNumber();
+        long userId = userRepository.register(phone, "即將離開的人", null, "hash", "salt");
+
+        userRepository.softDelete(userId, "已刪除的使用者");
+
+        assertThat(userRepository.findByPhoneNumber(phone)).isEmpty();
+        assertThat(userRepository.findCredentialsById(userId)).isEmpty();
+        assertThat(userRepository.softDelete(userId, "已刪除的使用者")).isFalse();
+    }
+
+    @Test
+    @DisplayName("軟刪除會釋放手機號碼，原號碼可重新註冊")
+    void softDeleteFreesPhoneNumber() {
+        String phone = TestData.uniquePhoneNumber();
+        long userId = userRepository.register(phone, "第一位", null, "hash", "salt");
+        userRepository.softDelete(userId, "已刪除的使用者");
+
+        long reused = userRepository.register(phone, "接手的人", null, "hash", "salt");
+
+        assertThat(reused).isNotEqualTo(userId);
+        assertThat(userRepository.findByPhoneNumber(phone)).get().satisfies(credentials ->
+                assertThat(credentials.user().userName()).isEqualTo("接手的人"));
+    }
+
+    @Test
+    @DisplayName("合併動態把發文與留言併成單一時間軸，新到舊")
+    void listsActivitiesNewestFirst() {
+        long userId = userRepository.register(TestData.uniquePhoneNumber(), "活躍的人", null, "hash", "salt");
+        long postId = postRepository.create(userId, "我的發文", null, List.of());
+        commentRepository.create(postId, userId, "我自己的留言");
+
+        assertThat(userRepository.countActivities(userId)).isEqualTo(2);
+
+        List<Activity> activities = userRepository.findActivityPage(userId, 10, 0);
+
+        assertThat(activities).hasSize(2);
+        // 留言晚於發文，因此排在前面
+        assertThat(activities.get(0).type()).isEqualTo(Activity.ActivityType.COMMENT);
+        assertThat(activities.get(0).content()).isEqualTo("我自己的留言");
+        assertThat(activities.get(0).postExcerpt()).isEqualTo("我的發文");
+        assertThat(activities.get(0).postAuthorName()).isEqualTo("活躍的人");
+
+        assertThat(activities.get(1).type()).isEqualTo(Activity.ActivityType.POST);
+        assertThat(activities.get(1).content()).isEqualTo("我的發文");
+        assertThat(activities.get(1).postExcerpt()).isNull();
+    }
+
+    @Test
+    @DisplayName("沒有任何產出的使用者，合併動態為空")
+    void listsNoActivitiesForNewUser() {
+        long userId = userRepository.register(TestData.uniquePhoneNumber(), "安靜的人", null, "hash", "salt");
+
+        assertThat(userRepository.countActivities(userId)).isZero();
+        assertThat(userRepository.findActivityPage(userId, 10, 0)).isEmpty();
     }
 }

@@ -52,31 +52,83 @@ VALUES
 -- =============================================================================
 -- 發文
 -- -----------------------------------------------------------------------------
--- comment_count 的值與下方實際留言筆數一致，模擬正常運作累積出的狀態。
+-- comment_count 與 like_count 的值均與下方實際資料一致，模擬正常運作累積出的狀態。
+-- 內容中的 #標籤 與 post_tags 的關聯相互對應——應用程式寫入時由 sp_post_create
+-- 自內容解析後建立，此處為求可讀直接列出等價的結果。
 -- =============================================================================
 INSERT IGNORE INTO `posts`
-    (`post_id`, `user_id`, `content`, `image`, `comment_count`, `created_at`, `updated_at`)
+    (`post_id`, `user_id`, `content`, `image`, `comment_count`, `like_count`, `created_at`, `updated_at`)
 VALUES
-    (1, 1, '第一次用這個平台發文，測試一下排版。大家好！', NULL, 2,
+    (1, 1, '第一次用這個平台發文，測試一下排版。大家好！ #新手上路', NULL, 2, 2,
      NOW() - INTERVAL 3 DAY, NOW() - INTERVAL 3 DAY),
 
-    (2, 2, '今天爬了硬漢嶺，全程兩小時十分鐘，比上次快了八分鐘。山頂風很大但視野真的值得。', NULL, 1,
+    (2, 2, '今天爬了硬漢嶺，全程兩小時十分鐘，比上次快了八分鐘。山頂風很大但視野真的值得。 #登山 #硬漢嶺', NULL, 1, 1,
      NOW() - INTERVAL 2 DAY, NOW() - INTERVAL 2 DAY),
 
-    (3, 3, '請問有人知道公司樓下那間咖啡店幾點開嗎？每次去都撲空。', NULL, 0,
+    (3, 3, '請問有人知道公司樓下那間咖啡店幾點開嗎？每次去都撲空。 #咖啡', NULL, 0, 0,
      NOW() - INTERVAL 1 DAY, NOW() - INTERVAL 1 DAY),
 
-    (4, 1, '咖哩煮太多了，明天早餐也是咖哩，後天可能還是。', NULL, 1,
+    (4, 1, '咖哩煮太多了，明天早餐也是咖哩，後天可能還是。 #料理 #咖哩', NULL, 1, 2,
      NOW() - INTERVAL 5 HOUR, NOW() - INTERVAL 5 HOUR);
 
 
 -- =============================================================================
 -- 留言
+-- -----------------------------------------------------------------------------
+-- updated_at 明確等於 created_at：該欄位設有 ON UPDATE CURRENT_TIMESTAMP 與
+-- DEFAULT CURRENT_TIMESTAMP，若省略不寫會取當下時間，使每一則留言在畫面上
+-- 都被標示成「已編輯」。
 -- =============================================================================
 INSERT IGNORE INTO `comments`
-    (`comment_id`, `post_id`, `user_id`, `content`, `created_at`)
+    (`comment_id`, `post_id`, `user_id`, `content`, `created_at`, `updated_at`)
 VALUES
-    (1, 1, 2, '歡迎！排版看起來很正常。', NOW() - INTERVAL 3 DAY + INTERVAL 20 MINUTE),
-    (2, 1, 3, '同上，手機上看也沒問題。',   NOW() - INTERVAL 3 DAY + INTERVAL 55 MINUTE),
-    (3, 2, 1, '八分鐘很多欸，恭喜。',       NOW() - INTERVAL 2 DAY + INTERVAL 3 HOUR),
-    (4, 4, 3, '這就是咖哩的宿命。',         NOW() - INTERVAL 4 HOUR);
+    (1, 1, 2, '歡迎！排版看起來很正常。', NOW() - INTERVAL 3 DAY + INTERVAL 20 MINUTE,
+                                          NOW() - INTERVAL 3 DAY + INTERVAL 20 MINUTE),
+    (2, 1, 3, '同上，手機上看也沒問題。',   NOW() - INTERVAL 3 DAY + INTERVAL 55 MINUTE,
+                                          NOW() - INTERVAL 3 DAY + INTERVAL 55 MINUTE),
+    (3, 2, 1, '八分鐘很多欸，恭喜。',       NOW() - INTERVAL 2 DAY + INTERVAL 3 HOUR,
+                                          NOW() - INTERVAL 2 DAY + INTERVAL 3 HOUR),
+    (4, 4, 3, '這就是咖哩的宿命。',         NOW() - INTERVAL 4 HOUR,
+                                          NOW() - INTERVAL 4 HOUR);
+
+
+-- =============================================================================
+-- 按讚
+-- -----------------------------------------------------------------------------
+-- 與上方 posts.like_count 一致：發文 1 兩讚、發文 2 一讚、發文 3 無讚、發文 4 兩讚。
+-- 審核者可據此驗證反正規化欄位是否失準：
+--     SELECT p.post_id, p.like_count, COUNT(pl.user_id)
+--       FROM posts p LEFT JOIN post_likes pl ON pl.post_id = p.post_id
+--      GROUP BY p.post_id, p.like_count;
+-- =============================================================================
+INSERT IGNORE INTO `post_likes` (`post_id`, `user_id`, `created_at`)
+VALUES
+    (1, 2, NOW() - INTERVAL 3 DAY + INTERVAL 25 MINUTE),
+    (1, 3, NOW() - INTERVAL 3 DAY + INTERVAL 60 MINUTE),
+    (2, 1, NOW() - INTERVAL 2 DAY + INTERVAL 3 HOUR),
+    (4, 2, NOW() - INTERVAL 4 HOUR),
+    (4, 3, NOW() - INTERVAL 3 HOUR);
+
+
+-- =============================================================================
+-- 標籤
+-- -----------------------------------------------------------------------------
+-- post_count 與下方 post_tags 的關聯數一致。標籤名稱不含 # 字元，且一律小寫
+-- （中文無大小寫之分，此處與 TagExtractor 的正規化規則一致即可）。
+-- =============================================================================
+INSERT IGNORE INTO `tags` (`tag_id`, `name`, `post_count`, `created_at`)
+VALUES
+    (1, '新手上路', 1, NOW() - INTERVAL 3 DAY),
+    (2, '登山',     1, NOW() - INTERVAL 2 DAY),
+    (3, '硬漢嶺',   1, NOW() - INTERVAL 2 DAY),
+    (4, '咖啡',     1, NOW() - INTERVAL 1 DAY),
+    (5, '料理',     1, NOW() - INTERVAL 5 HOUR),
+    (6, '咖哩',     1, NOW() - INTERVAL 5 HOUR);
+
+
+INSERT IGNORE INTO `post_tags` (`post_id`, `tag_id`)
+VALUES
+    (1, 1),
+    (2, 2), (2, 3),
+    (3, 4),
+    (4, 5), (4, 6);

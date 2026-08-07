@@ -1,5 +1,6 @@
 package com.esun.social.presentation.controller;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -20,7 +21,7 @@ import com.esun.social.common.config.SecurityConfig;
 import com.esun.social.common.exception.BusinessException;
 import com.esun.social.common.exception.ErrorCode;
 import com.esun.social.common.exception.GlobalExceptionHandler;
-import com.esun.social.common.response.PageResponse;
+import com.esun.social.common.response.CursorPageResponse;
 import com.esun.social.common.security.AuthenticatedUser;
 import com.esun.social.common.security.SecurityErrorWriter;
 import java.time.LocalDateTime;
@@ -45,13 +46,17 @@ class PostControllerTest {
     private static final Post POST = new Post(
             1L,
             OWNER_ID,
-            "第一篇發文",
+            "第一篇發文 #測試",
             "/uploads/abc.jpg",
             2,
+            3,
+            true,
             LocalDateTime.of(2026, 1, 1, 9, 0),
             LocalDateTime.of(2026, 1, 1, 9, 0),
             "王小明",
-            null);
+            null,
+            false,
+            List.of("測試"));
 
     @Autowired
     private MockMvc mockMvc;
@@ -65,25 +70,50 @@ class PostControllerTest {
     }
 
     @Test
-    @DisplayName("列表不需登入，回傳分頁資訊與作者資料")
+    @DisplayName("列表不需登入，回傳游標分頁資訊與作者資料")
     void listsPostsWithoutAuthentication() throws Exception {
-        when(postService.list(1, 10)).thenReturn(PageResponse.of(List.of(POST), 1, 10, 1));
+        when(postService.list(null, null, 10))
+                .thenReturn(CursorPageResponse.of(List.of(POST), "next-cursor", true));
 
         mockMvc.perform(get("/api/posts"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].postId").value(1))
-                .andExpect(jsonPath("$.data.items[0].content").value("第一篇發文"))
+                .andExpect(jsonPath("$.data.items[0].content").value("第一篇發文 #測試"))
                 .andExpect(jsonPath("$.data.items[0].commentCount").value(2))
+                .andExpect(jsonPath("$.data.items[0].likeCount").value(3))
+                .andExpect(jsonPath("$.data.items[0].likedByMe").value(true))
+                .andExpect(jsonPath("$.data.items[0].tags[0]").value("測試"))
                 .andExpect(jsonPath("$.data.items[0].author.userId").value(7))
                 .andExpect(jsonPath("$.data.items[0].author.userName").value("王小明"))
-                .andExpect(jsonPath("$.data.page").value(1))
-                .andExpect(jsonPath("$.data.totalPages").value(1));
+                .andExpect(jsonPath("$.data.items[0].author.deleted").value(false))
+                .andExpect(jsonPath("$.data.nextCursor").value("next-cursor"))
+                .andExpect(jsonPath("$.data.hasMore").value(true));
     }
 
     @Test
-    @DisplayName("分頁參數超出範圍時回 400，不會打到業務層")
+    @DisplayName("已登入時把觀看者傳給業務層，用以判斷 likedByMe")
+    void passesViewerIdWhenAuthenticated() throws Exception {
+        when(postService.list(OWNER_ID, null, 10)).thenReturn(CursorPageResponse.last(List.of(POST)));
+
+        mockMvc.perform(get("/api/posts").with(loggedInAs(OWNER_ID))).andExpect(status().isOk());
+
+        verify(postService).list(OWNER_ID, null, 10);
+    }
+
+    @Test
+    @DisplayName("游標原樣轉交業務層，控制器不解析它的內容")
+    void forwardsCursorVerbatim() throws Exception {
+        when(postService.list(null, "abc", 10)).thenReturn(CursorPageResponse.last(List.of()));
+
+        mockMvc.perform(get("/api/posts").param("cursor", "abc")).andExpect(status().isOk());
+
+        verify(postService).list(null, "abc", 10);
+    }
+
+    @Test
+    @DisplayName("每頁筆數超出範圍時回 400，不會打到業務層")
     void rejectsOutOfRangePaging() throws Exception {
-        mockMvc.perform(get("/api/posts").param("page", "0"))
+        mockMvc.perform(get("/api/posts").param("size", "0"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
 
@@ -91,13 +121,57 @@ class PostControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
 
-        verify(postService, never()).list(anyInt(), anyInt());
+        verify(postService, never()).list(any(), anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("搜尋端點不會被 /{postId} 吃掉")
+    void searchPathIsNotShadowedByPostId() throws Exception {
+        when(postService.search(null, "咖哩", null, 10)).thenReturn(CursorPageResponse.last(List.of(POST)));
+
+        mockMvc.perform(get("/api/posts/search").param("q", "咖哩"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].postId").value(1));
+
+        verify(postService).search(null, "咖哩", null, 10);
+    }
+
+    @Test
+    @DisplayName("按讚需登入，成功後回傳最新的發文狀態")
+    void likesPostAsAuthenticatedUser() throws Exception {
+        when(postService.like(1L, OWNER_ID)).thenReturn(POST);
+
+        mockMvc.perform(post("/api/posts/1/likes").with(loggedInAs(OWNER_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.likeCount").value(3));
+
+        verify(postService).like(1L, OWNER_ID);
+    }
+
+    @Test
+    @DisplayName("取消按讚走 DELETE")
+    void unlikesPost() throws Exception {
+        when(postService.unlike(1L, OWNER_ID)).thenReturn(POST);
+
+        mockMvc.perform(delete("/api/posts/1/likes").with(loggedInAs(OWNER_ID)))
+                .andExpect(status().isOk());
+
+        verify(postService).unlike(1L, OWNER_ID);
+    }
+
+    @Test
+    @DisplayName("未登入不得按讚")
+    void requiresAuthenticationToLike() throws Exception {
+        mockMvc.perform(post("/api/posts/1/likes")).andExpect(status().isUnauthorized());
+        mockMvc.perform(delete("/api/posts/1/likes")).andExpect(status().isUnauthorized());
+
+        verify(postService, never()).like(anyLong(), anyLong());
     }
 
     @Test
     @DisplayName("單篇查詢不存在時回 404")
     void reportsMissingPost() throws Exception {
-        when(postService.findById(99L)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND, "找不到這篇發文"));
+        when(postService.findById(null, 99L)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND, "找不到這篇發文"));
 
         mockMvc.perform(get("/api/posts/99"))
                 .andExpect(status().isNotFound())

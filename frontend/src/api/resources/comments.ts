@@ -18,6 +18,12 @@ export async function createComment(postId: number, content: string): Promise<Co
   return unwrap(response.data)
 }
 
+/** 編輯留言。僅本人可編輯；路徑同刪除，只需要留言 ID。 */
+export async function updateComment(commentId: number, content: string): Promise<Comment> {
+  const response = await http.put<ApiResponse<Comment>>(`/comments/${commentId}`, { content })
+  return unwrap(response.data)
+}
+
 /**
  * 刪除留言。
  *
