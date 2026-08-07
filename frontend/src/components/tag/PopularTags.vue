@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useQuery } from '@tanstack/vue-query'
+import { useId } from 'vue'
 
 import { fetchPopularTags } from '@/api/resources/tags'
 import TagChip from '@/components/tag/TagChip.vue'
@@ -8,11 +9,17 @@ import AppSkeleton from '@/components/ui/AppSkeleton.vue'
 import { tagKeys } from '@/queries/queryKeys'
 
 /**
- * 熱門標籤側欄。
+ * 熱門標籤。
  *
  * <p>資料變動不頻繁（標籤的使用次數只在發文增刪時改變），
  * 因此 staleTime 拉長到 5 分鐘，避免每次切換頁面都重新請求。
+ * 同一頁出現多個實例時（桌機側欄 + 搜尋頁內），共用的 query 快取讓它們只請求一次。
+ *
+ * <p>標題的 id 由 `useId()` 產生而非寫死：多個實例同時存在於 DOM 中時，
+ * 寫死的 id 會重複，`aria-labelledby` 也就指不到正確的那一個。
  */
+const headingId = useId()
+
 const { data: tags, isPending } = useQuery({
   queryKey: tagKeys.popular(),
   queryFn: () => fetchPopularTags(12),
@@ -24,10 +31,10 @@ const { data: tags, isPending } = useQuery({
   <AppCard
     as="section"
     class="sticky top-20 p-4"
-    aria-labelledby="popular-tags-heading"
+    :aria-labelledby="headingId"
   >
     <h2
-      id="popular-tags-heading"
+      :id="headingId"
       class="mb-3 text-sm font-semibold"
     >
       熱門標籤
