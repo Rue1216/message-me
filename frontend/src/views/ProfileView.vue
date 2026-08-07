@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { useQuery } from '@tanstack/vue-query'
+import { Camera } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { ApiClientError } from '@/api/client/http'
 import { fetchCurrentUser, updateCurrentUser } from '@/api/resources/users'
-import ImageUploader from '@/components/common/ImageUploader.vue'
 import ActivityTimeline from '@/components/user/ActivityTimeline.vue'
+import AvatarEditorDialog from '@/components/user/AvatarEditorDialog.vue'
 import UserAvatar from '@/components/user/UserAvatar.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
@@ -81,6 +82,32 @@ const { errors, validateOnBlur, revalidate, validateAll } = useFormValidation(mo
 
 const biographyRemaining = computed(() => BIOGRAPHY_MAX_LENGTH - model.value.biography.length)
 
+const avatarDialogOpen = ref(false)
+
+/**
+ * 儲存頭像。頭像不跟著下方的表單一起送出——換頭像是個獨立的動作，
+ * 使用者按下對話框裡的「儲存」時期待的是它立刻生效。
+ *
+ * <p>其他欄位取自 `query.data`（伺服器上已存的值）而非表單的 `model`：
+ * 表單裡可能有還沒送出的草稿，換個頭像不該把它們一併寫進資料庫。
+ */
+async function handleAvatarSave(next: string | null): Promise<void> {
+  const current = query.data.value
+  if (!current) {
+    return
+  }
+
+  const updated = await updateCurrentUser({
+    userName: current.userName,
+    email: current.email ?? null,
+    biography: current.biography ?? null,
+    coverImage: next,
+  })
+  auth.setUser(updated)
+  coverImage.value = updated.coverImage ?? null
+  toast.success(next ? '頭像已更新' : '頭像已移除')
+}
+
 async function handleSubmit(): Promise<void> {
   if (!validateAll()) {
     return
@@ -110,11 +137,28 @@ async function handleSubmit(): Promise<void> {
     <AppCard class="p-5">
       <div class="mb-5 flex items-center justify-between gap-4">
         <div class="flex items-center gap-4">
-          <UserAvatar
-            :name="model.userName"
-            :image="coverImage"
-            size="lg"
-          />
+          <!--
+            頭像本身就是換頭像的入口：圓框是使用者眼中「我的頭像」所在之處，
+            要改它時第一個會點的也是這裡，而不是表單下方某個文字欄位。
+          -->
+          <button
+            type="button"
+            class="group relative rounded-full"
+            aria-label="更換頭像"
+            @click="avatarDialogOpen = true"
+          >
+            <UserAvatar
+              :name="model.userName"
+              :image="coverImage"
+              size="lg"
+            />
+            <span
+              class="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+              aria-hidden="true"
+            >
+              <Camera class="size-5" />
+            </span>
+          </button>
           <div>
             <h1 class="font-semibold">
               {{ query.data.value?.phoneNumber ?? '' }}
@@ -195,14 +239,6 @@ async function handleSubmit(): Promise<void> {
           />
         </FormField>
 
-        <div class="flex flex-col gap-1.5">
-          <span class="text-sm font-medium">頭像圖片<span class="font-normal text-muted-foreground">（選填）</span></span>
-          <ImageUploader
-            v-model="coverImage"
-            placeholder="上傳頭像"
-          />
-        </div>
-
         <div class="flex justify-end">
           <AppButton
             type="submit"
@@ -213,6 +249,13 @@ async function handleSubmit(): Promise<void> {
         </div>
       </form>
     </AppCard>
+
+    <AvatarEditorDialog
+      v-model:open="avatarDialogOpen"
+      :name="model.userName"
+      :image="coverImage"
+      :on-save="handleAvatarSave"
+    />
 
     <ActivityTimeline
       v-if="auth.currentUserId !== null"
