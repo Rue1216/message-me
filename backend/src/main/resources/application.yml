@@ -15,6 +15,20 @@ spring:
       max-file-size: 5MB
       max-request-size: 6MB
 
+app:
+  jwt:
+    # 簽章密鑰由環境變數 APP_JWT_SECRET 注入（見 .env.example）。
+    # 此處刻意不給預設值：缺少設定時應用程式啟動即失敗，
+    # 好過帶著一組寫在版控裡的弱密鑰上線。
+    issuer: message-me
+    expiration-minutes: 120
+  upload:
+    # 容器中以 APP_UPLOAD_DIR 覆寫為 /app/uploads（掛載為 Docker volume）
+    directory: ./uploads
+    # 對外路徑；與 Nginx 提供靜態圖片的位置一致，前端不需區分環境
+    public-base-path: /uploads
+    max-file-size-bytes: 5242880
+
 management:
   endpoints:
     web:
