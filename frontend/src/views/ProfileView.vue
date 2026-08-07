@@ -5,7 +5,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { ApiClientError } from '@/api/client/http'
-import { fetchCurrentUser, updateCurrentUser } from '@/api/resources/users'
+import { fetchCurrentUser } from '@/api/resources/users'
 import ActivityTimeline from '@/components/user/ActivityTimeline.vue'
 import AvatarEditorDialog from '@/components/user/AvatarEditorDialog.vue'
 import UserAvatar from '@/components/user/UserAvatar.vue'
@@ -15,6 +15,7 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppTextarea from '@/components/ui/AppTextarea.vue'
 import FormField from '@/components/ui/FormField.vue'
 import { useFormValidation } from '@/composables/useFormValidation'
+import { useProfileMutations } from '@/composables/useProfileMutations'
 import { useToast } from '@/composables/useToast'
 import { userKeys } from '@/queries/queryKeys'
 import { useAuthStore } from '@/stores/auth'
@@ -48,13 +49,16 @@ const query = useQuery({
   queryFn: fetchCurrentUser,
 })
 
-const submitting = ref(false)
+const { update } = useProfileMutations()
+
 const model = ref({
   userName: '',
   email: '',
   biography: '',
 })
 const coverImage = ref<string | null>(null)
+/** 表單是否已經填過。見下方 watch。 */
+const seeded = ref(false)
 
 // 資料到達後才填入表單；immediate 讓快取命中的情形也會執行
 watch(
@@ -64,11 +68,23 @@ watch(
       return
     }
     auth.setUser(user)
-    model.value = {
-      userName: user.userName,
-      email: user.email ?? '',
-      biography: user.biography ?? '',
+
+    /*
+     * 表單只填一次。
+     *
+     * 這個 watch 會在每次資料變動時執行——存檔後把結果寫回快取、視窗重新取得焦點時的
+     * 背景重新取得都算。若每次都重填，使用者正在編輯、還沒送出的內容會被默默還原。
+     */
+    if (!seeded.value) {
+      model.value = {
+        userName: user.userName,
+        email: user.email ?? '',
+        biography: user.biography ?? '',
+      }
+      seeded.value = true
     }
+
+    // 頭像不是表單欄位（由對話框負責），因此永遠跟著伺服器的值走
     coverImage.value = user.coverImage ?? null
   },
   { immediate: true },
@@ -97,14 +113,13 @@ async function handleAvatarSave(next: string | null): Promise<void> {
     return
   }
 
-  const updated = await updateCurrentUser({
+  // 失敗時讓例外往外傳，由對話框顯示訊息並維持開啟，使用者可以直接重試
+  await update.mutateAsync({
     userName: current.userName,
     email: current.email ?? null,
     biography: current.biography ?? null,
     coverImage: next,
   })
-  auth.setUser(updated)
-  coverImage.value = updated.coverImage ?? null
   toast.success(next ? '頭像已更新' : '頭像已移除')
 }
 
@@ -113,21 +128,17 @@ async function handleSubmit(): Promise<void> {
     return
   }
 
-  submitting.value = true
   try {
     // PUT 為全欄位取代語意：選填欄位留空時送 null，代表清空而不是維持原值
-    const updated = await updateCurrentUser({
+    await update.mutateAsync({
       userName: model.value.userName.trim(),
       email: model.value.email.trim() || null,
       biography: model.value.biography.trim() || null,
       coverImage: coverImage.value,
     })
-    auth.setUser(updated)
     toast.success('個人檔案已更新')
   } catch (error) {
     toast.error(error instanceof ApiClientError ? error.message : '更新失敗，請稍後再試')
-  } finally {
-    submitting.value = false
   }
 }
 </script>
@@ -242,7 +253,7 @@ async function handleSubmit(): Promise<void> {
         <div class="flex justify-end">
           <AppButton
             type="submit"
-            :loading="submitting"
+            :loading="update.isPending.value"
           >
             儲存變更
           </AppButton>
