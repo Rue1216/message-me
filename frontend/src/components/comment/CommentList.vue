@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { Pencil, Trash2 } from '@lucide/vue'
 import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import CommentForm from '@/components/comment/CommentForm.vue'
 import UserAvatar from '@/components/user/UserAvatar.vue'
-import AppButton from '@/components/ui/AppButton.vue'
+import AppDropdownMenu from '@/components/ui/AppDropdownMenu.vue'
+import AppDropdownMenuItem from '@/components/ui/AppDropdownMenuItem.vue'
 import type { Comment } from '@/types/api'
 import { formatDateTime, formatRelativeTime } from '@/utils/format/datetime'
 
@@ -95,31 +97,33 @@ function submitEdit(comment: Comment, content: string): void {
         </p>
       </div>
 
-      <div
+      <AppDropdownMenu
         v-if="
           manageableUserId !== null &&
             manageableUserId === comment.author.userId &&
             editingId !== comment.commentId
         "
-        class="flex shrink-0 gap-0.5"
+        label="留言操作"
+        class="size-7"
       >
-        <AppButton
-          variant="ghost"
-          size="sm"
-          class="h-7 px-2 text-xs"
-          @click="editingId = comment.commentId"
-        >
+        <AppDropdownMenuItem @select="editingId = comment.commentId">
+          <Pencil
+            class="size-4"
+            aria-hidden="true"
+          />
           編輯
-        </AppButton>
-        <AppButton
-          variant="ghost"
-          size="sm"
-          class="h-7 px-2 text-xs text-destructive hover:bg-destructive/10"
-          @click="$emit('remove', comment)"
+        </AppDropdownMenuItem>
+        <AppDropdownMenuItem
+          variant="destructive"
+          @select="$emit('remove', comment)"
         >
+          <Trash2
+            class="size-4"
+            aria-hidden="true"
+          />
           刪除
-        </AppButton>
-      </div>
+        </AppDropdownMenuItem>
+      </AppDropdownMenu>
     </li>
   </ul>
 </template>

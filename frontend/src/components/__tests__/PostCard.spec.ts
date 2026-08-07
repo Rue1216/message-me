@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { RouterLinkStub, mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it } from 'vitest'
+import { RouterLinkStub, flushPromises, mount } from '@vue/test-utils'
 
 import PostCard from '@/components/post/PostCard.vue'
 import type { Post } from '@/types/api'
@@ -22,9 +22,16 @@ const post: Post = {
  * 拉進來只會讓「這張卡片顯示了什麼」的測試變成需要準備整個應用程式環境。
  * 按讚的行為由它自己的測試負責。
  */
+const mounted: { unmount: () => void }[] = []
+
+/**
+ * attachTo：動作選單的內容以 Portal 掛在 body 上，元件若不在真實文件裡就量不到位置也收不到焦點。
+ * 代價是每個測試都要卸載，否則上一個測試留下的選單會被下一個查到。
+ */
 function mountCard(props: Partial<InstanceType<typeof PostCard>['$props']> = {}) {
-  return mount(PostCard, {
+  const wrapper = mount(PostCard, {
     props: { post, ...props },
+    attachTo: document.body,
     global: {
       stubs: {
         RouterLink: RouterLinkStub,
@@ -32,7 +39,23 @@ function mountCard(props: Partial<InstanceType<typeof PostCard>['$props']> = {})
       },
     },
   })
+  mounted.push(wrapper)
+  return wrapper
 }
+
+/** 打開「⋯」選單，並以文字取得其中一個選項。 */
+async function openMenuItem(label: string): Promise<HTMLElement | undefined> {
+  document.querySelector<HTMLElement>('button[aria-label="發文操作"]')?.click()
+  await flushPromises()
+
+  return [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (item) => item.textContent?.trim() === label,
+  )
+}
+
+afterEach(() => {
+  mounted.splice(0).forEach((wrapper) => wrapper.unmount())
+})
 
 describe('PostCard', () => {
   it('顯示作者、內容與留言數', () => {
@@ -50,16 +73,18 @@ describe('PostCard', () => {
     expect(wrapper.text()).not.toContain('刪除')
   })
 
-  it('是自己的發文時可以送出編輯與刪除事件', async () => {
+  it('是自己的發文時可以從動作選單送出編輯與刪除事件', async () => {
     const wrapper = mountCard({ canManage: true })
 
-    // 以文字而非位置尋找：版面調整（例如把按讚移到別處）不該讓這個測試失敗
-    const buttons = wrapper.findAll('button')
-    const edit = buttons.find((button) => button.text() === '編輯')
-    const remove = buttons.find((button) => button.text() === '刪除')
+    // 以文字而非位置尋找：版面調整（例如選單改成別的圖示）不該讓這個測試失敗。
+    // 選單選完就關閉，所以刪除要再開一次。
+    const edit = await openMenuItem('編輯')
+    edit?.click()
+    await flushPromises()
 
-    await edit?.trigger('click')
-    await remove?.trigger('click')
+    const remove = await openMenuItem('刪除')
+    remove?.click()
+    await flushPromises()
 
     expect(wrapper.emitted('edit')?.[0]).toEqual([post])
     expect(wrapper.emitted('remove')?.[0]).toEqual([post])

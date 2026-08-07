@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { MessageSquare } from '@lucide/vue'
+import { MessageSquare, Pencil, Trash2 } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import LikeButton from '@/components/post/LikeButton.vue'
 import TagChip from '@/components/tag/TagChip.vue'
 import UserAvatar from '@/components/user/UserAvatar.vue'
-import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
+import AppDropdownMenu from '@/components/ui/AppDropdownMenu.vue'
+import AppDropdownMenuItem from '@/components/ui/AppDropdownMenuItem.vue'
 import type { Post } from '@/types/api'
 import { formatDateTime, formatRelativeTime } from '@/utils/format/datetime'
 
@@ -81,26 +82,29 @@ const edited = computed(() => props.post.updatedAt !== props.post.createdAt)
         </div>
       </div>
 
-      <div
+      <AppDropdownMenu
         v-if="canManage"
-        class="ml-auto flex gap-1"
+        label="發文操作"
+        class="ml-auto"
       >
-        <AppButton
-          variant="ghost"
-          size="sm"
-          @click="$emit('edit', post)"
-        >
+        <AppDropdownMenuItem @select="$emit('edit', post)">
+          <Pencil
+            class="size-4"
+            aria-hidden="true"
+          />
           編輯
-        </AppButton>
-        <AppButton
-          variant="ghost"
-          size="sm"
-          class="text-destructive hover:bg-destructive/10"
-          @click="$emit('remove', post)"
+        </AppDropdownMenuItem>
+        <AppDropdownMenuItem
+          variant="destructive"
+          @select="$emit('remove', post)"
         >
+          <Trash2
+            class="size-4"
+            aria-hidden="true"
+          />
           刪除
-        </AppButton>
-      </div>
+        </AppDropdownMenuItem>
+      </AppDropdownMenu>
     </header>
 
     <p class="user-content mt-3">
