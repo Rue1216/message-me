@@ -1,21 +1,29 @@
 <script setup lang="ts">
-// 骨架階段的佔位頁面。實際的版面、路由與狀態管理於 feat/frontend-foundation 建立。
-const appName = 'Message Me'
+import { dateZhTW, zhTW } from 'naive-ui'
+
+import AppShell from '@/components/AppShell.vue'
+import { themeOverrides } from '@/theme'
+
+/**
+ * 應用程式根元件。
+ *
+ * 這裡只做一件事：把整棵樹包進 Naive UI 的環境中——繁體中文語系、主題覆寫，
+ * 以及 message / dialog 兩個必須由 provider 注入的全域 API。
+ * 實際版面在 AppShell，讓它能在測試中單獨掛載。
+ */
 </script>
 
 <template>
-  <main class="placeholder">
-    <h1>{{ appName }}</h1>
-    <p>簡易社群媒體平台 — 前端骨架已就緒。</p>
-  </main>
+  <n-config-provider
+    :locale="zhTW"
+    :date-locale="dateZhTW"
+    :theme-overrides="themeOverrides"
+  >
+    <n-global-style />
+    <n-message-provider :max="3">
+      <n-dialog-provider>
+        <AppShell />
+      </n-dialog-provider>
+    </n-message-provider>
+  </n-config-provider>
 </template>
-
-<style scoped>
-.placeholder {
-  font-family: system-ui, -apple-system, 'Segoe UI', 'Noto Sans TC', sans-serif;
-  margin: 4rem auto;
-  max-width: 40rem;
-  padding: 0 1.5rem;
-  text-align: center;
-}
-</style>
