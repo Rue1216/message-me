@@ -41,5 +41,10 @@ export default defineConfig({
     // 測試一律集中在各模組的 __tests__/ 下，瀏覽原始碼目錄時只會看到實作檔本身
     include: ['src/**/__tests__/**/*.spec.ts'],
     globals: true,
+    // 預設的 5s/10s 在機器高負載時（CI 共用 runner、與後端建置並行）會使
+    // beforeEach 的 router 導航與元件掛載偶發逾時——失敗點是 hook 而非斷言。
+    // 放寬逾時只影響「多慢才算失敗」，不會拖慢正常情況下的執行速度。
+    testTimeout: 15000,
+    hookTimeout: 30000,
   },
 })
