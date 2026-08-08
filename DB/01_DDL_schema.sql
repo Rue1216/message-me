@@ -254,8 +254,8 @@ SELECT p.`post_id`,
 --
 -- 效果：即使應用程式端的參數綁定全部失效，app_user 在資料庫層面依然無法對資料表
 --       下達任意 SELECT / INSERT / UPDATE / DELETE。Stored Procedure 以 DEFINER
---       （root）權限執行，因此仍可正常存取資料表 —— 存取路徑被限縮為「僅這 14 支
---       已審查過的程序」。
+--       （root）權限執行，因此仍可正常存取資料表 —— 存取路徑被限縮為
+--       「僅 02_DDL_stored_procedures.sql 中已審查過的程序」。
 --
 -- 審核者可直接驗證：
 --   docker compose exec db mysql -u app_user -p -e "SELECT * FROM message_me.users;"
