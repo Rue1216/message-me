@@ -2,21 +2,16 @@ import { fileURLToPath, URL } from 'node:url'
 
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
-import Components from 'unplugin-vue-components/vite'
-import { NaiveUiResolver } from 'unplugin-vue-components/resolvers'
+import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     vue(),
-    // Naive UI 元件按需自動引入：模板寫 <n-button> 即可，不必在每個 SFC 手動 import。
-    // 型別宣告產生於 src/components.d.ts 並納入版控，讓 CI 的 type-check 不必先跑一次 build。
-    // dirs 設為空陣列：專案自己的元件維持顯式 import，import 路徑本身就是最好的來源說明。
-    Components({
-      dirs: [],
-      dts: 'src/components.d.ts',
-      resolvers: [NaiveUiResolver()],
-    }),
+    // Tailwind v4 以 Vite 外掛的形式運作，不再需要 postcss.config 與 tailwind.config。
+    // 樣式在建置期就編成一份靜態 CSS，執行期不注入任何 <style>——
+    // 這正是 nginx.conf 的 style-src 能收成 'self' 的前提（見該檔註解）。
+    tailwindcss(),
   ],
   resolve: {
     alias: {
@@ -43,7 +38,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.spec.ts'],
+    // 測試一律集中在各模組的 __tests__/ 下，瀏覽原始碼目錄時只會看到實作檔本身
+    include: ['src/**/__tests__/**/*.spec.ts'],
     globals: true,
   },
 })

@@ -1,50 +1,42 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useMessage, type FormInst, type FormRules } from 'naive-ui'
+import { useQuery } from '@tanstack/vue-query'
+import { Camera } from '@lucide/vue'
+import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 
-import { ApiClientError } from '@/api/http'
-import { fetchCurrentUser, updateCurrentUser } from '@/api/users'
-import ImageUploader from '@/components/ImageUploader.vue'
-import UserAvatar from '@/components/UserAvatar.vue'
+import { ApiClientError } from '@/api/client/http'
+import { fetchCurrentUser } from '@/api/resources/users'
+import ActivityTimeline from '@/components/user/ActivityTimeline.vue'
+import AvatarEditorDialog from '@/components/user/AvatarEditorDialog.vue'
+import UserAvatar from '@/components/user/UserAvatar.vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import AppInput from '@/components/ui/AppInput.vue'
+import AppTextarea from '@/components/ui/AppTextarea.vue'
+import FormField from '@/components/ui/FormField.vue'
+import { useFormValidation } from '@/composables/useFormValidation'
+import { useProfileMutations } from '@/composables/useProfileMutations'
+import { useToast } from '@/composables/useToast'
+import { userKeys } from '@/queries/queryKeys'
 import { useAuthStore } from '@/stores/auth'
-import { formatDateTime } from '@/utils/datetime'
+import { formatDateTime } from '@/utils/format/datetime'
 import {
   BIOGRAPHY_MAX_LENGTH,
   USER_NAME_MAX_LENGTH,
-  toFormRule,
   validateBiography,
   validateEmail,
   validateUserName,
-} from '@/utils/validation'
+} from '@/utils/validation/user'
 
 /**
- * 個人檔案編輯。
+ * 本人的個人檔案：編輯表單 + 自己的合併動態。
  *
- * 手機號碼是登入帳號，變更它需要另一套驗證流程（例如簡訊驗證），
+ * <p>手機號碼是登入帳號，變更它需要另一套驗證流程（例如簡訊驗證），
  * 不該混在個人檔案編輯裡，因此只顯示不可修改。
  */
 
 const auth = useAuthStore()
-const message = useMessage()
-
-const formRef = ref<FormInst | null>(null)
-const loading = ref(false)
-const submitting = ref(false)
-const phoneNumber = ref(auth.user?.phoneNumber ?? '')
-const joinedAt = ref(auth.user?.createdAt ?? '')
-
-const model = ref({
-  userName: auth.user?.userName ?? '',
-  email: auth.user?.email ?? '',
-  biography: auth.user?.biography ?? '',
-  coverImage: auth.user?.coverImage ?? null,
-})
-
-const rules: FormRules = {
-  userName: toFormRule(validateUserName),
-  email: toFormRule(validateEmail),
-  biography: toFormRule(validateBiography),
-}
+const toast = useToast()
 
 /**
  * 進頁面時重新抓一次個人檔案。
@@ -52,156 +44,234 @@ const rules: FormRules = {
  * store 裡的資料來自登入當下，可能已經過時（例如在另一個分頁改過）；
  * 編輯表單若以舊資料為底，送出時會把別處的變更蓋掉。
  */
-onMounted(async () => {
-  loading.value = true
-  try {
-    const user = await fetchCurrentUser()
-    auth.setUser(user)
-    phoneNumber.value = user.phoneNumber
-    joinedAt.value = user.createdAt
-    model.value = {
-      userName: user.userName,
-      email: user.email ?? '',
-      biography: user.biography ?? '',
-      coverImage: user.coverImage ?? null,
-    }
-  } catch (error) {
-    message.error(error instanceof ApiClientError ? error.message : '載入個人檔案失敗')
-  } finally {
-    loading.value = false
-  }
+const query = useQuery({
+  queryKey: userKeys.me(),
+  queryFn: fetchCurrentUser,
 })
 
-async function handleSubmit(): Promise<void> {
-  try {
-    await formRef.value?.validate()
-  } catch {
+const { update } = useProfileMutations()
+
+const model = ref({
+  userName: '',
+  email: '',
+  biography: '',
+})
+const coverImage = ref<string | null>(null)
+/** 表單是否已經填過。見下方 watch。 */
+const seeded = ref(false)
+
+// 資料到達後才填入表單；immediate 讓快取命中的情形也會執行
+watch(
+  query.data,
+  (user) => {
+    if (!user) {
+      return
+    }
+    auth.setUser(user)
+
+    /*
+     * 表單只填一次。
+     *
+     * 這個 watch 會在每次資料變動時執行——存檔後把結果寫回快取、視窗重新取得焦點時的
+     * 背景重新取得都算。若每次都重填，使用者正在編輯、還沒送出的內容會被默默還原。
+     */
+    if (!seeded.value) {
+      model.value = {
+        userName: user.userName,
+        email: user.email ?? '',
+        biography: user.biography ?? '',
+      }
+      seeded.value = true
+    }
+
+    // 頭像不是表單欄位（由對話框負責），因此永遠跟著伺服器的值走
+    coverImage.value = user.coverImage ?? null
+  },
+  { immediate: true },
+)
+
+const { errors, validateOnBlur, revalidate, validateAll } = useFormValidation(model, {
+  userName: validateUserName,
+  email: validateEmail,
+  biography: validateBiography,
+})
+
+const biographyRemaining = computed(() => BIOGRAPHY_MAX_LENGTH - model.value.biography.length)
+
+const avatarDialogOpen = ref(false)
+
+/**
+ * 儲存頭像。頭像不跟著下方的表單一起送出——換頭像是個獨立的動作，
+ * 使用者按下對話框裡的「儲存」時期待的是它立刻生效。
+ *
+ * <p>其他欄位取自 `query.data`（伺服器上已存的值）而非表單的 `model`：
+ * 表單裡可能有還沒送出的草稿，換個頭像不該把它們一併寫進資料庫。
+ */
+async function handleAvatarSave(next: string | null): Promise<void> {
+  const current = query.data.value
+  if (!current) {
     return
   }
 
-  submitting.value = true
+  // 失敗時讓例外往外傳，由對話框顯示訊息並維持開啟，使用者可以直接重試
+  await update.mutateAsync({
+    userName: current.userName,
+    email: current.email ?? null,
+    biography: current.biography ?? null,
+    coverImage: next,
+  })
+  toast.success(next ? '頭像已更新' : '頭像已移除')
+}
+
+async function handleSubmit(): Promise<void> {
+  if (!validateAll()) {
+    return
+  }
+
   try {
     // PUT 為全欄位取代語意：選填欄位留空時送 null，代表清空而不是維持原值
-    const updated = await updateCurrentUser({
+    await update.mutateAsync({
       userName: model.value.userName.trim(),
       email: model.value.email.trim() || null,
       biography: model.value.biography.trim() || null,
-      coverImage: model.value.coverImage,
+      coverImage: coverImage.value,
     })
-    auth.setUser(updated)
-    message.success('個人檔案已更新')
+    toast.success('個人檔案已更新')
   } catch (error) {
-    message.error(error instanceof ApiClientError ? error.message : '更新失敗，請稍後再試')
-  } finally {
-    submitting.value = false
+    toast.error(error instanceof ApiClientError ? error.message : '更新失敗，請稍後再試')
   }
 }
 </script>
 
 <template>
-  <n-spin :show="loading">
-    <n-card
-      title="個人檔案"
-      :bordered="false"
-    >
-      <div class="profile__identity">
-        <UserAvatar
-          :name="model.userName"
-          :image="model.coverImage"
-          :size="56"
-        />
-        <div>
-          <p class="profile__phone">
-            {{ phoneNumber }}
-          </p>
-          <p
-            v-if="joinedAt"
-            class="profile__joined"
+  <div class="flex flex-col gap-6">
+    <AppCard class="p-5">
+      <div class="mb-5 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-4">
+          <!--
+            頭像本身就是換頭像的入口：圓框是使用者眼中「我的頭像」所在之處，
+            要改它時第一個會點的也是這裡，而不是表單下方某個文字欄位。
+          -->
+          <button
+            type="button"
+            class="group relative rounded-full"
+            aria-label="更換頭像"
+            @click="avatarDialogOpen = true"
           >
-            加入於 {{ formatDateTime(joinedAt) }}
-          </p>
+            <UserAvatar
+              :name="model.userName"
+              :image="coverImage"
+              size="lg"
+            />
+            <span
+              class="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+              aria-hidden="true"
+            >
+              <Camera class="size-5" />
+            </span>
+          </button>
+          <div>
+            <h1 class="font-semibold">
+              {{ query.data.value?.phoneNumber ?? '' }}
+            </h1>
+            <p
+              v-if="query.data.value"
+              class="text-xs text-muted-foreground"
+            >
+              加入於 {{ formatDateTime(query.data.value.createdAt) }}
+            </p>
+          </div>
         </div>
+
+        <RouterLink
+          :to="{ name: 'account-settings' }"
+          class="text-sm text-primary hover:underline"
+        >
+          帳號設定
+        </RouterLink>
       </div>
 
-      <n-divider />
-
-      <n-form
-        ref="formRef"
-        :model="model"
-        :rules="rules"
-        label-placement="top"
-        :show-require-mark="false"
+      <form
+        class="flex flex-col gap-4 border-t border-border pt-5"
         @submit.prevent="handleSubmit"
       >
-        <n-form-item
+        <FormField
+          id="profile-name"
+          v-slot="{ describedBy, invalid }"
           label="使用者名稱"
-          path="userName"
+          :error="errors.userName"
+          :hint="`最多 ${USER_NAME_MAX_LENGTH} 字`"
         >
-          <n-input
-            v-model:value="model.userName"
-            :maxlength="USER_NAME_MAX_LENGTH"
-            show-count
+          <AppInput
+            id="profile-name"
+            v-model="model.userName"
+            :invalid="invalid"
+            :aria-describedby="describedBy"
+            @blur="validateOnBlur('userName')"
+            @input="revalidate('userName')"
           />
-        </n-form-item>
+        </FormField>
 
-        <n-form-item
-          label="電子郵件（選填）"
-          path="email"
+        <FormField
+          id="profile-email"
+          v-slot="{ describedBy, invalid }"
+          label="電子郵件"
+          optional
+          :error="errors.email"
         >
-          <n-input
-            v-model:value="model.email"
+          <AppInput
+            id="profile-email"
+            v-model="model.email"
+            type="email"
             placeholder="you@example.com"
+            :invalid="invalid"
+            :aria-describedby="describedBy"
+            @blur="validateOnBlur('email')"
+            @input="revalidate('email')"
           />
-        </n-form-item>
+        </FormField>
 
-        <n-form-item
-          label="自我介紹（選填）"
-          path="biography"
+        <FormField
+          id="profile-bio"
+          v-slot="{ describedBy, invalid }"
+          label="自我介紹"
+          optional
+          :error="errors.biography"
+          :hint="`還可以輸入 ${biographyRemaining} 字`"
         >
-          <n-input
-            v-model:value="model.biography"
-            type="textarea"
-            :autosize="{ minRows: 3, maxRows: 8 }"
-            :maxlength="BIOGRAPHY_MAX_LENGTH"
-            show-count
+          <AppTextarea
+            id="profile-bio"
+            v-model="model.biography"
             placeholder="介紹一下你自己…"
+            :invalid="invalid"
+            :aria-describedby="describedBy"
+            @blur="validateOnBlur('biography')"
+            @input="revalidate('biography')"
           />
-        </n-form-item>
+        </FormField>
 
-        <n-form-item label="頭像圖片（選填）">
-          <ImageUploader
-            v-model="model.coverImage"
-            placeholder="上傳頭像"
-          />
-        </n-form-item>
+        <div class="flex justify-end">
+          <AppButton
+            type="submit"
+            :loading="update.isPending.value"
+          >
+            儲存變更
+          </AppButton>
+        </div>
+      </form>
+    </AppCard>
 
-        <n-button
-          type="primary"
-          attr-type="submit"
-          :loading="submitting"
-        >
-          儲存變更
-        </n-button>
-      </n-form>
-    </n-card>
-  </n-spin>
+    <AvatarEditorDialog
+      v-model:open="avatarDialogOpen"
+      :name="model.userName"
+      :image="coverImage"
+      :on-save="handleAvatarSave"
+    />
+
+    <ActivityTimeline
+      v-if="auth.currentUserId !== null"
+      :user-id="auth.currentUserId"
+      empty-title="你還沒有任何動態"
+    />
+  </div>
 </template>
-
-<style scoped>
-.profile__identity {
-  align-items: center;
-  display: flex;
-  gap: 1rem;
-}
-
-.profile__phone {
-  font-weight: 600;
-  margin: 0;
-}
-
-.profile__joined {
-  color: var(--n-text-color-3);
-  font-size: 0.8125rem;
-  margin: 0.125rem 0 0;
-}
-</style>

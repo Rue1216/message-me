@@ -1,19 +1,22 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useMessage, type FormInst, type FormRules } from 'naive-ui'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
-import { login } from '@/api/auth'
-import { ApiClientError } from '@/api/http'
+import { login } from '@/api/resources/auth'
+import { ApiClientError } from '@/api/client/http'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import AppInput from '@/components/ui/AppInput.vue'
+import FormField from '@/components/ui/FormField.vue'
+import { useFormValidation } from '@/composables/useFormValidation'
+import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
-import { toFormRule } from '@/utils/validation'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
-const message = useMessage()
+const toast = useToast()
 
-const formRef = ref<FormInst | null>(null)
 const submitting = ref(false)
 const model = ref({ phoneNumber: '', password: '' })
 
@@ -23,10 +26,10 @@ const model = ref({ phoneNumber: '', password: '' })
  * 若在這裡擋掉格式不符的輸入，回饋就會與「格式正確但帳密錯誤」不同，
  * 反而讓人能從前端反應推測哪些手機號碼存在。後端的 LoginRequest 同樣只用 @NotBlank。
  */
-const rules: FormRules = {
-  phoneNumber: toFormRule((value) => (value.trim() ? null : '請填寫手機號碼')),
-  password: toFormRule((value) => (value ? null : '請填寫密碼')),
-}
+const { errors, validateOnBlur, revalidate, validateAll } = useFormValidation(model, {
+  phoneNumber: (value) => (value.trim() ? null : '請填寫手機號碼'),
+  password: (value) => (value ? null : '請填寫密碼'),
+})
 
 /** 登入後要去的地方：被導航守衛攔下時記在 query 的原始位置，否則回動態牆。 */
 function redirectTarget(): string {
@@ -39,9 +42,7 @@ function redirectTarget(): string {
 }
 
 async function handleSubmit(): Promise<void> {
-  try {
-    await formRef.value?.validate()
-  } catch {
+  if (!validateAll()) {
     return
   }
 
@@ -52,10 +53,10 @@ async function handleSubmit(): Promise<void> {
       password: model.value.password,
     })
     auth.signIn(result)
-    message.success(`歡迎回來，${result.user.userName}`)
+    toast.success(`歡迎回來，${result.user.userName}`)
     await router.replace(redirectTarget())
   } catch (error) {
-    message.error(error instanceof ApiClientError ? error.message : '登入失敗，請稍後再試')
+    toast.error(error instanceof ApiClientError ? error.message : '登入失敗，請稍後再試')
   } finally {
     submitting.value = false
   }
@@ -63,72 +64,72 @@ async function handleSubmit(): Promise<void> {
 </script>
 
 <template>
-  <div class="auth-page">
-    <n-card
-      title="登入"
-      :bordered="false"
-    >
-      <n-form
-        ref="formRef"
-        :model="model"
-        :rules="rules"
-        label-placement="top"
-        :show-require-mark="false"
+  <div class="mx-auto mt-8 max-w-sm">
+    <AppCard class="p-6">
+      <h1 class="mb-5 text-xl font-bold">
+        登入
+      </h1>
+
+      <form
+        class="flex flex-col gap-4"
         @submit.prevent="handleSubmit"
       >
-        <n-form-item
+        <FormField
+          id="login-phone"
+          v-slot="{ describedBy, invalid }"
           label="手機號碼"
-          path="phoneNumber"
+          :error="errors.phoneNumber"
         >
-          <n-input
-            v-model:value="model.phoneNumber"
+          <AppInput
+            id="login-phone"
+            v-model="model.phoneNumber"
             placeholder="09xxxxxxxx"
-            :input-props="{ autocomplete: 'username', inputmode: 'numeric' }"
+            autocomplete="username"
+            inputmode="numeric"
+            :invalid="invalid"
+            :aria-describedby="describedBy"
+            @blur="validateOnBlur('phoneNumber')"
+            @input="revalidate('phoneNumber')"
           />
-        </n-form-item>
+        </FormField>
 
-        <n-form-item
+        <FormField
+          id="login-password"
+          v-slot="{ describedBy, invalid }"
           label="密碼"
-          path="password"
+          :error="errors.password"
         >
-          <n-input
-            v-model:value="model.password"
+          <AppInput
+            id="login-password"
+            v-model="model.password"
             type="password"
-            show-password-on="click"
             placeholder="請輸入密碼"
-            :input-props="{ autocomplete: 'current-password' }"
-            @keyup.enter="handleSubmit"
+            autocomplete="current-password"
+            :invalid="invalid"
+            :aria-describedby="describedBy"
+            @blur="validateOnBlur('password')"
+            @input="revalidate('password')"
           />
-        </n-form-item>
+        </FormField>
 
-        <n-button
-          type="primary"
-          block
-          attr-type="submit"
+        <AppButton
+          type="submit"
+          class="w-full"
           :loading="submitting"
         >
           登入
-        </n-button>
-      </n-form>
+        </AppButton>
+      </form>
 
-      <template #footer>
-        <span class="auth-page__hint">
-          還沒有帳號？
-          <RouterLink :to="{ name: 'register' }">立即註冊</RouterLink>
-        </span>
-      </template>
-    </n-card>
+      <p class="mt-5 border-t border-border pt-4 text-sm text-muted-foreground">
+        還沒有帳號？
+        <RouterLink
+          :to="{ name: 'register' }"
+          class="font-medium text-primary hover:underline"
+        >
+          立即註冊
+        </RouterLink>
+      </p>
+    </AppCard>
   </div>
 </template>
-
-<style scoped>
-.auth-page {
-  margin: 2rem auto 0;
-  max-width: 24rem;
-}
-
-.auth-page__hint {
-  color: var(--n-text-color-3);
-  font-size: 0.875rem;
-}
-</style>

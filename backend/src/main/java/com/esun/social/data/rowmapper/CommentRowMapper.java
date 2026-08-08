@@ -6,7 +6,7 @@ import java.sql.SQLException;
 import java.time.LocalDateTime;
 import org.springframework.jdbc.core.RowMapper;
 
-/** 將 {@code sp_comment_list_by_post} 回傳的列轉為 {@link Comment}。 */
+/** 將 {@code sp_comment_list_by_post} 與 {@code sp_comment_find_by_id} 回傳的列轉為 {@link Comment}。 */
 public class CommentRowMapper implements RowMapper<Comment> {
 
     @Override
@@ -17,7 +17,9 @@ public class CommentRowMapper implements RowMapper<Comment> {
                 rs.getLong("user_id"),
                 rs.getString("content"),
                 rs.getObject("created_at", LocalDateTime.class),
+                rs.getObject("updated_at", LocalDateTime.class),
                 rs.getString("author_name"),
-                rs.getString("author_cover_image"));
+                rs.getString("author_cover_image"),
+                rs.getObject("author_deleted_at", LocalDateTime.class) != null);
     }
 }

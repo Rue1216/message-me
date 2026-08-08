@@ -3,6 +3,7 @@ package com.esun.social.presentation;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -113,10 +114,50 @@ class CommentApiIT extends MySqlContainerSupport {
     void cannotDeleteSomeoneElsesComment() throws Exception {
         long commentId = createComment(reader, postId, "這是我的留言");
 
+        // 403 而非 404：留言確實存在，只是不屬於這個人。
+        // 留言本來就公開可讀，據實回報不會洩漏任何原本看不到的資訊。
         mockMvc.perform(delete("/api/comments/" + commentId).header(HttpHeaders.AUTHORIZATION, author))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
 
         mockMvc.perform(get("/api/posts/" + postId)).andExpect(jsonPath("$.data.commentCount").value(1));
+    }
+
+    @Test
+    @DisplayName("刪除不存在的留言回 404，與「不是你的」有所區別")
+    void reportsNotFoundForMissingComment() throws Exception {
+        mockMvc.perform(delete("/api/comments/999999").header(HttpHeaders.AUTHORIZATION, author))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("本人可以編輯自己的留言，updatedAt 隨之改變")
+    void editsOwnComment() throws Exception {
+        long commentId = createComment(reader, postId, "原始留言");
+
+        mockMvc.perform(put("/api/comments/" + commentId)
+                        .header(HttpHeaders.AUTHORIZATION, reader)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"改過的留言\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").value("改過的留言"))
+                .andExpect(jsonPath("$.data.commentId").value((int) commentId));
+    }
+
+    @Test
+    @DisplayName("編輯別人的留言回 403，內容不受影響")
+    void cannotEditSomeoneElsesComment() throws Exception {
+        long commentId = createComment(reader, postId, "原始留言");
+
+        mockMvc.perform(put("/api/comments/" + commentId)
+                        .header(HttpHeaders.AUTHORIZATION, author)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"被改掉了\"}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/posts/" + postId + "/comments"))
+                .andExpect(jsonPath("$.data.items[0].content").value("原始留言"));
     }
 
     @Test

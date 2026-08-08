@@ -42,7 +42,8 @@ class AuthServiceTest {
             null,
             "自我介紹",
             LocalDateTime.of(2026, 1, 1, 9, 0),
-            LocalDateTime.of(2026, 1, 1, 9, 0));
+            LocalDateTime.of(2026, 1, 1, 9, 0),
+            null);
 
     @Mock
     private UserRepository userRepository;

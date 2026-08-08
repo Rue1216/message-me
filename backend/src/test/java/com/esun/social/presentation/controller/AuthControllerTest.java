@@ -43,7 +43,8 @@ class AuthControllerTest {
             null,
             null,
             LocalDateTime.of(2026, 1, 1, 9, 0),
-            LocalDateTime.of(2026, 1, 1, 9, 0));
+            LocalDateTime.of(2026, 1, 1, 9, 0),
+            null);
 
     @Autowired
     private MockMvc mockMvc;

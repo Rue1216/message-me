@@ -51,10 +51,37 @@ const router = createRouter({
       meta: { guestOnly: true, title: '註冊' },
     },
     {
+      path: '/users/:userId(\\d+)',
+      name: 'user-profile',
+      component: () => import('@/views/UserProfileView.vue'),
+      props: true,
+      meta: { title: '個人檔案' },
+    },
+    {
+      path: '/search',
+      name: 'search',
+      component: () => import('@/views/SearchView.vue'),
+      meta: { title: '搜尋' },
+    },
+    {
+      // 標籤名稱可能含中文，vue-router 會自動處理編碼與解碼
+      path: '/tags/:name',
+      name: 'tag',
+      component: () => import('@/views/TagView.vue'),
+      props: true,
+      meta: { title: '標籤' },
+    },
+    {
       path: '/profile',
       name: 'profile',
       component: () => import('@/views/ProfileView.vue'),
       meta: { requiresAuth: true, title: '個人檔案' },
+    },
+    {
+      path: '/settings/account',
+      name: 'account-settings',
+      component: () => import('@/views/AccountSettingsView.vue'),
+      meta: { requiresAuth: true, title: '帳號設定' },
     },
     {
       path: '/:pathMatch(.*)*',

@@ -2,9 +2,31 @@
 <html lang="zh-Hant">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Message Me</title>
+
+    <!--
+      網站圖示。手寫體的 m 置於品牌藍 #3c6fdd 上，該色即設計權杖中的 --primary
+      （hsl(221 70% 55%)，見 src/assets/main.css）——分頁上的圖示與介面裡的主色是同一個藍。
+      字體為 Leckerli One（SIL Open Font License），僅用於產生圖示，不在執行期載入。
+
+      三種檔案各有其對象，瀏覽器只會挑自己需要的那個：
+        - favicon.ico：桌機瀏覽器的分頁與書籤（內含 16 / 32 / 48 三種尺寸）
+        - PNG：支援 PNG 圖示的瀏覽器會優先採用，同尺寸下比 ICO 清晰
+        - apple-touch-icon：iOS 加入主畫面時使用，尺寸固定 180×180
+    -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <!--
+      深色模式的首屏套用。必須同步載入（不加 defer）才能趕在第一次繪製之前，
+      否則深色使用者會看到一瞬間的白底。內容見 public/theme-init.js，
+      獨立成檔是為了符合 script-src 'self'——inline script 會被 CSP 擋下。
+    -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="app"></div>

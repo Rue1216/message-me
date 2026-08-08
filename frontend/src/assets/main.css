@@ -1,38 +1,128 @@
+@import 'tailwindcss';
+
 /*
- * 基礎樣式。
+ * 設計權杖與基礎樣式。
  *
  * 字體一律使用系統字型堆疊，不引入網路字體——內容安全政策（見 frontend/nginx.conf）
  * 只允許同源資源，外部字體會被擋下，而自架字體檔對這個專案的價值不足以抵過體積。
+ *
+ * 深色模式以 .dark class 切換，而非 @media (prefers-color-scheme)：
+ * 使用者必須能夠覆寫系統設定（見 composables/useTheme.ts）。
+ * 首屏套用由 public/theme-init.js 負責，避免白底閃爍。
  */
 
-:root {
-  --app-max-width: 46rem;
-  --app-gutter: 1rem;
+/* Tailwind v4 預設以 prefers-color-scheme 判斷 dark:；改為由 .dark class 決定 */
+@custom-variant dark (&:where(.dark, .dark *));
 
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    'Noto Sans TC',
-    'PingFang TC',
-    'Microsoft JhengHei',
+@theme {
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei',
     sans-serif;
-  line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
+
+  /* 內容區寬度：單欄閱讀的舒適上限，與側欄一起構成桌機的雙欄版面 */
+  --container-feed: 42rem;
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+/*
+ * 色彩以 HSL 分量儲存，讓 Tailwind 的透明度修飾詞（bg-primary/50）能正常運作。
+ * 淺色與深色各一組，語意名稱相同，元件因此完全不需要知道目前是哪個主題。
+ */
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --primary: 221 70% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 70% 55%;
+
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 96%;
+
+    --card: 222 40% 12%;
+    --card-foreground: 210 40% 96%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --primary: 217 85% 68%;
+    --primary-foreground: 222 47% 11%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 96%;
+
+    --destructive: 0 63% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 217 85% 68%;
+  }
 }
 
-body {
-  margin: 0;
+/* 把上面的權杖接進 Tailwind 的色彩系統，元件即可寫 bg-card、text-muted-foreground */
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
 }
 
-#app {
-  min-height: 100vh;
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * 可見的鍵盤焦點環。:focus-visible 而非 :focus——滑鼠點擊不該留下焦點框，
+   * 但用鍵盤操作的人必須隨時知道自己在哪裡。
+   */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
 }
 
 /*

@@ -20,7 +20,7 @@ export interface ApiErrorPayload {
   message: string
 }
 
-/** 分頁結果。頁碼自 1 起算，與後端 PageResponse 一致。 */
+/** 頁碼分頁結果。頁碼自 1 起算，與後端 PageResponse 一致。 */
 export interface PageResponse<T> {
   items: T[]
   page: number
@@ -29,11 +29,25 @@ export interface PageResponse<T> {
   totalPages: number
 }
 
+/**
+ * 游標分頁結果，用於時間軸類的列表。
+ *
+ * 沒有總筆數與總頁數是刻意的：無限捲動不需要它們，而在大資料表上為了顯示一個數字
+ * 去做 COUNT(*) 並不划算。`nextCursor` 對前端不透明，原樣回傳給下一次請求即可。
+ */
+export interface CursorPageResponse<T> {
+  items: T[]
+  nextCursor?: string | null
+  hasMore: boolean
+}
+
 /** 內容作者的顯示資訊，內嵌於發文與留言中，不含手機號碼與電子郵件。 */
 export interface Author {
   userId: number
   userName: string
   coverImage?: string | null
+  /** 已刪除帳號的內容仍會保留，此時名稱已被匿名化，且不應連往個人頁。 */
+  deleted: boolean
 }
 
 /** 本人的完整個人檔案，僅在註冊、登入與 `/api/users/me` 的回應中出現。 */
@@ -54,6 +68,7 @@ export interface PublicUser {
   userName: string
   coverImage?: string | null
   biography?: string | null
+  deleted: boolean
   createdAt: string
 }
 
@@ -62,6 +77,11 @@ export interface Post {
   content: string
   image?: string | null
   commentCount: number
+  likeCount: number
+  /** 目前登入者是否按過讚；未登入時恆為 false。 */
+  likedByMe: boolean
+  /** 標籤名稱，不含 `#`。 */
+  tags: string[]
   createdAt: string
   updatedAt: string
   author: Author
@@ -72,7 +92,33 @@ export interface Comment {
   postId: number
   content: string
   createdAt: string
+  /** 與 createdAt 相異即代表被編輯過。 */
+  updatedAt: string
   author: Author
+}
+
+export interface Tag {
+  name: string
+  postCount: number
+}
+
+/** 個人頁時間軸上的一筆活動——一則發文，或一則留言。 */
+export interface Activity {
+  type: 'POST' | 'COMMENT'
+  activityId: number
+  /** 兩種活動都指向一則發文，因此永遠可以連過去。 */
+  postId: number
+  content: string
+  image?: string | null
+  /** 僅 POST 有意義。 */
+  commentCount: number
+  /** 僅 POST 有意義。 */
+  likeCount: number
+  createdAt: string
+  /** 僅 COMMENT 有值：被留言的那則發文的內容摘要。 */
+  postExcerpt?: string | null
+  /** 僅 COMMENT 有值：被留言的那則發文的作者。 */
+  postAuthorName?: string | null
 }
 
 /** 登入結果。`user` 一併回傳，省去登入後立刻再打一次 `/api/users/me`。 */
@@ -92,6 +138,8 @@ export interface UploadedImage {
 export interface PostPayload {
   content: string
   image?: string | null
+  /** 標籤名稱，不含 `#`。沒有標籤時送空陣列。 */
+  tags: string[]
 }
 
 export interface RegisterPayload {
@@ -111,4 +159,13 @@ export interface UpdateProfilePayload {
   email?: string | null
   biography?: string | null
   coverImage?: string | null
+}
+
+export interface ChangePasswordPayload {
+  currentPassword: string
+  newPassword: string
+}
+
+export interface DeleteAccountPayload {
+  password: string
 }

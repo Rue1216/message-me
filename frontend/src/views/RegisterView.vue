@@ -1,26 +1,29 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useMessage, type FormInst, type FormRules } from 'naive-ui'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 
-import { login, register } from '@/api/auth'
-import { ApiClientError } from '@/api/http'
+import { login, register } from '@/api/resources/auth'
+import { ApiClientError } from '@/api/client/http'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import AppInput from '@/components/ui/AppInput.vue'
+import FormField from '@/components/ui/FormField.vue'
+import { useFormValidation } from '@/composables/useFormValidation'
+import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 import {
   PASSWORD_MAX_LENGTH,
-  USER_NAME_MAX_LENGTH,
-  toFormRule,
+  PASSWORD_MIN_LENGTH,
   validateEmail,
   validatePassword,
   validatePhoneNumber,
   validateUserName,
-} from '@/utils/validation'
+} from '@/utils/validation/user'
 
 const auth = useAuthStore()
 const router = useRouter()
-const message = useMessage()
+const toast = useToast()
 
-const formRef = ref<FormInst | null>(null)
 const submitting = ref(false)
 const model = ref({
   phoneNumber: '',
@@ -30,23 +33,21 @@ const model = ref({
   email: '',
 })
 
-const rules: FormRules = {
-  phoneNumber: toFormRule(validatePhoneNumber),
-  userName: toFormRule(validateUserName),
-  password: toFormRule(validatePassword),
-  confirmPassword: toFormRule((value) => {
+const { errors, validateOnBlur, revalidate, validateAll } = useFormValidation(model, {
+  phoneNumber: validatePhoneNumber,
+  userName: validateUserName,
+  password: validatePassword,
+  confirmPassword: (value) => {
     if (!value) {
       return '請再次輸入密碼'
     }
     return value === model.value.password ? null : '兩次輸入的密碼不一致'
-  }),
-  email: toFormRule(validateEmail),
-}
+  },
+  email: validateEmail,
+})
 
 async function handleSubmit(): Promise<void> {
-  try {
-    await formRef.value?.validate()
-  } catch {
+  if (!validateAll()) {
     return
   }
 
@@ -67,10 +68,10 @@ async function handleSubmit(): Promise<void> {
     // 免去使用者才剛填完表單又要輸入一次帳密。
     const result = await login({ phoneNumber, password })
     auth.signIn(result)
-    message.success(`註冊成功，歡迎加入，${result.user.userName}`)
+    toast.success(`註冊成功，歡迎加入，${result.user.userName}`)
     await router.replace({ name: 'home' })
   } catch (error) {
-    message.error(error instanceof ApiClientError ? error.message : '註冊失敗，請稍後再試')
+    toast.error(error instanceof ApiClientError ? error.message : '註冊失敗，請稍後再試')
   } finally {
     submitting.value = false
   }
@@ -78,109 +79,129 @@ async function handleSubmit(): Promise<void> {
 </script>
 
 <template>
-  <div class="auth-page">
-    <n-card
-      title="註冊"
-      :bordered="false"
-    >
-      <n-form
-        ref="formRef"
-        :model="model"
-        :rules="rules"
-        label-placement="top"
-        :show-require-mark="false"
+  <div class="mx-auto mt-8 max-w-sm">
+    <AppCard class="p-6">
+      <h1 class="mb-5 text-xl font-bold">
+        註冊
+      </h1>
+
+      <form
+        class="flex flex-col gap-4"
         @submit.prevent="handleSubmit"
       >
-        <n-form-item
+        <FormField
+          id="register-phone"
+          v-slot="{ describedBy, invalid }"
           label="手機號碼"
-          path="phoneNumber"
+          :error="errors.phoneNumber"
+          hint="這也是你的登入帳號"
         >
-          <n-input
-            v-model:value="model.phoneNumber"
+          <AppInput
+            id="register-phone"
+            v-model="model.phoneNumber"
             placeholder="09xxxxxxxx"
-            :input-props="{ autocomplete: 'username', inputmode: 'numeric' }"
+            autocomplete="username"
+            inputmode="numeric"
+            :invalid="invalid"
+            :aria-describedby="describedBy"
+            @blur="validateOnBlur('phoneNumber')"
+            @input="revalidate('phoneNumber')"
           />
-        </n-form-item>
+        </FormField>
 
-        <n-form-item
+        <FormField
+          id="register-name"
+          v-slot="{ describedBy, invalid }"
           label="使用者名稱"
-          path="userName"
+          :error="errors.userName"
         >
-          <n-input
-            v-model:value="model.userName"
-            :maxlength="USER_NAME_MAX_LENGTH"
-            show-count
-            placeholder="顯示在動態牆上的名稱"
+          <AppInput
+            id="register-name"
+            v-model="model.userName"
+            placeholder="想讓別人怎麼稱呼你？"
+            autocomplete="nickname"
+            :invalid="invalid"
+            :aria-describedby="describedBy"
+            @blur="validateOnBlur('userName')"
+            @input="revalidate('userName')"
           />
-        </n-form-item>
+        </FormField>
 
-        <n-form-item
+        <FormField
+          id="register-password"
+          v-slot="{ describedBy, invalid }"
           label="密碼"
-          path="password"
+          :error="errors.password"
+          :hint="`${PASSWORD_MIN_LENGTH} 至 ${PASSWORD_MAX_LENGTH} 個字元`"
         >
-          <n-input
-            v-model:value="model.password"
+          <AppInput
+            id="register-password"
+            v-model="model.password"
             type="password"
-            show-password-on="click"
-            :maxlength="PASSWORD_MAX_LENGTH"
-            placeholder="至少 8 個字元"
-            :input-props="{ autocomplete: 'new-password' }"
+            autocomplete="new-password"
+            :invalid="invalid"
+            :aria-describedby="describedBy"
+            @blur="validateOnBlur('password')"
+            @input="revalidate('password'); revalidate('confirmPassword')"
           />
-        </n-form-item>
+        </FormField>
 
-        <n-form-item
+        <FormField
+          id="register-confirm"
+          v-slot="{ describedBy, invalid }"
           label="確認密碼"
-          path="confirmPassword"
+          :error="errors.confirmPassword"
         >
-          <n-input
-            v-model:value="model.confirmPassword"
+          <AppInput
+            id="register-confirm"
+            v-model="model.confirmPassword"
             type="password"
-            show-password-on="click"
-            :maxlength="PASSWORD_MAX_LENGTH"
-            placeholder="再次輸入密碼"
-            :input-props="{ autocomplete: 'new-password' }"
+            autocomplete="new-password"
+            :invalid="invalid"
+            :aria-describedby="describedBy"
+            @blur="validateOnBlur('confirmPassword')"
+            @input="revalidate('confirmPassword')"
           />
-        </n-form-item>
+        </FormField>
 
-        <n-form-item
-          label="電子郵件（選填）"
-          path="email"
+        <FormField
+          id="register-email"
+          v-slot="{ describedBy, invalid }"
+          label="電子郵件"
+          optional
+          :error="errors.email"
         >
-          <n-input
-            v-model:value="model.email"
+          <AppInput
+            id="register-email"
+            v-model="model.email"
+            type="email"
             placeholder="you@example.com"
-            :input-props="{ autocomplete: 'email', type: 'email' }"
+            autocomplete="email"
+            :invalid="invalid"
+            :aria-describedby="describedBy"
+            @blur="validateOnBlur('email')"
+            @input="revalidate('email')"
           />
-        </n-form-item>
+        </FormField>
 
-        <n-button
-          type="primary"
-          block
-          attr-type="submit"
+        <AppButton
+          type="submit"
+          class="w-full"
           :loading="submitting"
         >
-          建立帳號
-        </n-button>
-      </n-form>
+          註冊
+        </AppButton>
+      </form>
 
-      <template #footer>
-        <span class="auth-page__hint">
-          已經有帳號了？
-          <RouterLink :to="{ name: 'login' }">前往登入</RouterLink>
-        </span>
-      </template>
-    </n-card>
+      <p class="mt-5 border-t border-border pt-4 text-sm text-muted-foreground">
+        已經有帳號了？
+        <RouterLink
+          :to="{ name: 'login' }"
+          class="font-medium text-primary hover:underline"
+        >
+          前往登入
+        </RouterLink>
+      </p>
+    </AppCard>
   </div>
 </template>
-
-<style scoped>
-.auth-page {
-  margin: 2rem auto 0;
-  max-width: 24rem;
-}
-
-.auth-page__hint {
-  color: var(--n-text-color-3);
-  font-size: 0.875rem;
-}
-</style>

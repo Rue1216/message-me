@@ -46,7 +46,8 @@ class UserControllerTest {
             "/uploads/cover.jpg",
             "喜歡咖哩",
             LocalDateTime.of(2026, 1, 1, 9, 0),
-            LocalDateTime.of(2026, 1, 2, 9, 0));
+            LocalDateTime.of(2026, 1, 2, 9, 0),
+            null);
 
     @Autowired
     private MockMvc mockMvc;
