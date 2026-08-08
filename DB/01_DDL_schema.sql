@@ -164,8 +164,8 @@ CREATE TABLE IF NOT EXISTS `post_likes` (
 -- =============================================================================
 -- tags — 標籤
 -- -----------------------------------------------------------------------------
--- name        一律以小寫正規化後存入（正規化在業務層完成，見 TagExtractor），
---             因此 #Vue 與 #vue 會落在同一個標籤上。
+-- name        一律以小寫正規化後存入（正規化在業務層完成，見 TagNormalizer），
+--             因此 Vue 與 vue 會落在同一個標籤上。
 --             唯一鍵使「同名標籤只會有一列」成為資料庫層的保證，
 --             sp_post_create / sp_post_update 得以直接用 INSERT IGNORE 做 upsert。
 -- post_count  反正規化的使用次數，供熱門標籤排序；與 posts.comment_count 同一套
@@ -217,7 +217,7 @@ CREATE TABLE IF NOT EXISTS `post_tags` (
 -- 四支程序的回傳形狀自動保持一致——RowMapper 只有一個，投影就不該有四份。
 --
 -- tag_names 以 GROUP_CONCAT 攤平成逗號分隔字串，而非另開一個結果集：
--- 標籤名稱在業務層以 [\p{L}\p{N}_] 正規化過（見 TagExtractor），不可能含有逗號，
+-- 標籤名稱在業務層以 [\p{L}\p{N}_] 正規化過（見 TagNormalizer），不可能含有逗號，
 -- 因此攤平後仍可無歧義地還原。這讓「一篇發文一列」的簡單契約得以維持。
 --
 -- liked_by_me 刻意不放進來：它取決於觀看者是誰，屬於呼叫端的參數而非發文的屬性，

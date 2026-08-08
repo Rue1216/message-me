@@ -10,7 +10,7 @@
 | 規格要求的功能 | 額外實作的功能 |
 | --- | --- |
 | 註冊 / 登入驗證 | 修改密碼、刪除帳號（軟刪除 + 匿名化） |
-| 發文 CRUD | 按讚（冪等）、`#標籤` 自動解析、標籤瀏覽 |
+| 發文 CRUD | 按讚（冪等）、標籤（發文時以輸入框指定）、標籤瀏覽 |
 | 留言 | 編輯留言 |
 | 個人檔案 | 他人的公開檔案頁、發文與留言的合併動態時間軸 |
 | — | 中文全文搜尋（ngram）、熱門標籤 |
@@ -76,7 +76,7 @@ docker compose down -v        # 連同資料庫與上傳圖片的 volume 一併�
             ▼
 ┌─────────────────────────┐
 │ Spring Boot             │  展示層 / 業務層 / 資料層 / 共用層
-│ (Application Server 層) │  JWT 驗證、Bean Validation、標籤解析
+│ (Application Server 層) │  JWT 驗證、Bean Validation、標籤正規化
 │ container: app          │  volume: /app/uploads（圖片）
 └───────────┬─────────────┘
             │  jdbc:mysql://db:3306
@@ -143,11 +143,11 @@ frontend/src/
 | `DELETE` | `/api/users/me` | 🔒 | 刪除帳號（軟刪除 + 匿名化，需提供密碼） |
 | `GET` | `/api/users/{userId}` | | 他人的公開檔案（不含手機、Email） |
 | `GET` | `/api/users/{userId}/activities?page=&size=` | | 發文與留言的合併時間軸，新到舊 |
-| `POST` | `/api/posts` | 🔒 | 新增發文，回 `201`；內容中的 `#標籤` 自動解析 |
+| `POST` | `/api/posts` | 🔒 | 新增發文，回 `201`；標籤由請求主體的 `tags` 帶入 |
 | `GET` | `/api/posts?cursor=&size=` | | 動態牆，新到舊，**游標分頁** |
 | `GET` | `/api/posts/search?q=&cursor=&size=` | | 全文搜尋，游標分頁 |
 | `GET` | `/api/posts/{postId}` | | 單篇發文 |
-| `PUT` | `/api/posts/{postId}` | 🔒 | 編輯發文（僅本人），標籤依新內容重新解析 |
+| `PUT` | `/api/posts/{postId}` | 🔒 | 編輯發文（僅本人），標籤全欄位取代 |
 | `DELETE` | `/api/posts/{postId}` | 🔒 | 刪除發文（僅本人，連帶刪除留言、按讚、標籤關聯） |
 | `POST` | `/api/posts/{postId}/likes` | 🔒 | 按讚（冪等） |
 | `DELETE` | `/api/posts/{postId}/likes` | 🔒 | 取消按讚（冪等） |
@@ -244,9 +244,10 @@ curl -i -X POST http://localhost:3001/api/posts \
 若刪發文時因為不是本人而影響 0 列，前面已刪除的留言與按讚就必須全部還原。
 少了這個回滾，任何人都能對別人的發文送出刪除請求——刪不掉發文，卻毀了它底下的所有留言。
 
-### 標籤的解析位置
+### 標籤的正規化位置
 
-`#標籤` 由**業務層**（`TagExtractor`）以正則自內容解析後，以 JSON 陣列傳入 SP，
+標籤由發文者在專屬的標籤輸入框指定，隨請求主體以陣列送出；
+**業務層**（`TagNormalizer`）驗證並正規化後以 JSON 陣列傳入 SP，
 SP 內再以 MySQL 8 的 `JSON_TABLE` 展開成資料列。規格要求的是「透過 Stored Procedure 存取資料庫」，
 不是「用 SQL 做字串處理」——在 SP 裡以 `WHILE` 搭配 `SUBSTRING_INDEX` 手工切字串，
 只會換來一段難讀且無法單獨測試的迴圈。寫入時仍是單一 SP 呼叫，跨表交易的完整性不受影響。
@@ -385,7 +386,7 @@ curl -sI http://localhost:3001/ | grep -i content-security-policy
    註冊 → 登入 → 發文（含上傳圖片）→ 編輯發文 → 留言 → 刪除發文（確認留言一併消失）
    → 編輯個人檔案 → 登出
 3. 驗證**額外功能**：
-   - 發文內容輸入 `#測試`，送出後標籤成為連結，點擊可看到該標籤底下的發文
+   - 發文時於標籤欄位輸入 `測試` 送出，卡片下方出現 `#測試` 連結，點擊可看到該標籤底下的發文
    - 對發文按讚，**連按兩次計數仍為 1**；重新整理後狀態保持
    - 以另一個帳號登入，確認對方按的讚不會顯示成自己按的
    - 點擊作者名稱進入個人檔案頁，確認發文與留言交錯出現在同一條時間軸上、新的在最上面
