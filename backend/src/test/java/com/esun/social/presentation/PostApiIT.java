@@ -1,5 +1,7 @@
 package com.esun.social.presentation;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -13,6 +15,8 @@ import com.esun.social.support.ApiClient;
 import com.esun.social.support.MySqlContainerSupport;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.List;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -131,15 +135,56 @@ class PostApiIT extends MySqlContainerSupport {
     }
 
     @Test
-    @DisplayName("內容中的 #標籤 會被解析出來，並可依標籤查回")
-    void extractsHashtagsAndFindsByTag() throws Exception {
-        long postId = createPost(author, "週末去 #陽明山 走走");
+    @DisplayName("標籤由請求指定，並可依標籤查回")
+    void storesTagsAndFindsByTag() throws Exception {
+        long postId = createPost(author, "週末去走走", List.of("陽明山"));
 
         mockMvc.perform(get("/api/posts/" + postId)).andExpect(jsonPath("$.data.tags[0]").value("陽明山"));
 
         mockMvc.perform(get("/api/tags/陽明山/posts"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].postId").value((int) postId));
+    }
+
+    @Test
+    @DisplayName("內文裡的 # 只是文字，不會變成標籤")
+    void doesNotParseHashtagsFromContent() throws Exception {
+        long postId = createPost(author, "週末去 #陽明山 走走");
+
+        mockMvc.perform(get("/api/posts/" + postId))
+                .andExpect(jsonPath("$.data.content").value("週末去 #陽明山 走走"))
+                .andExpect(jsonPath("$.data.tags").isEmpty());
+    }
+
+    @Test
+    @DisplayName("標籤含不合法字元時回 400，訊息與前端逐字相同")
+    void rejectsTagWithDisallowedCharacters() throws Exception {
+        mockMvc.perform(post("/api/posts")
+                        .header(HttpHeaders.AUTHORIZATION, author)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new PostBody("週末去走走", List.of("台北101!")))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.message").value("標籤只能使用文字、數字與底線"));
+    }
+
+    @Test
+    @DisplayName("標籤超過數量上限時回 400，訊息不帶欄位名前綴")
+    void rejectsTooManyTags() throws Exception {
+        // 上限是 10，這裡刻意送 11 個。訊息直接比對全文而不只比對狀態碼：
+        // 這條規則只由 TagNormalizer 負責，若哪天又在 DTO 補上 @Size，
+        // 回來的會是被 GlobalExceptionHandler 冠上欄位名的「tags：標籤最多 10 個」，
+        // 與前端逐字對齊的那句就對不上了
+        List<String> tooManyTags =
+                IntStream.rangeClosed(1, 11).mapToObj(index -> "標籤" + index).toList();
+
+        mockMvc.perform(post("/api/posts")
+                        .header(HttpHeaders.AUTHORIZATION, author)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new PostBody("週末去走走", tooManyTags))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.message").value("標籤最多 10 個"));
     }
 
     @Test
@@ -223,6 +268,81 @@ class PostApiIT extends MySqlContainerSupport {
     }
 
     @Test
+    @DisplayName("編輯時帶新的標籤，舊的標籤整組被換掉")
+    void replacesTagsOnEdit() throws Exception {
+        long postId = createPost(author, "原始內容", List.of("陽明山", "登山"));
+
+        mockMvc.perform(put("/api/posts/" + postId)
+                        .header(HttpHeaders.AUTHORIZATION, author)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new PostBody("改成露營", List.of("露營")))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tags").value(contains("露營")));
+
+        // 重新查一次：確認換掉的結果真的落在資料庫，而不只是這次回應算出來的
+        mockMvc.perform(get("/api/posts/" + postId)).andExpect(jsonPath("$.data.tags").value(contains("露營")));
+    }
+
+    /**
+     * 標籤獨立成欄位之後才走得通的一條路：在此之前，標籤要變就一定得連內文一起變。
+     *
+     * <p>能成立是因為 {@code sp_post_update} 以 {@code SELECT COUNT(*)} 判定擁有權，
+     * 而不是沿用 {@code UPDATE} 之後的 {@code ROW_COUNT()}——後者回報的是「實際被改變的列數」，
+     * 這次更新沒有改變任何一列，會被誤讀成「發文不存在或不屬於你」而回 404。
+     * 其餘的標籤測試都同時改了內文，蓋不到這個分支。
+     */
+    @Test
+    @DisplayName("內文一字不動、只換標籤，仍是一次成功的編輯，且不算「已編輯」")
+    void replacesTagsWithoutTouchingContent() throws Exception {
+        long postId = createPost(author, "原始內容", List.of("陽明山", "登山"));
+
+        // DATETIME 的精度只到秒。不先跨過一秒的邊界，「沒有更新」與「在同一秒內更新過」
+        // 在資料上長得一模一樣，下面那條 updatedAt 的斷言就會恆真
+        Thread.sleep(1100);
+
+        mockMvc.perform(put("/api/posts/" + postId)
+                        .header(HttpHeaders.AUTHORIZATION, author)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new PostBody("原始內容", List.of("露營")))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").value("原始內容"))
+                .andExpect(jsonPath("$.data.tags").value(contains("露營")));
+
+        // 重新查一次：確認換掉的結果真的落在資料庫，而不只是這次回應算出來的
+        String body = mockMvc.perform(get("/api/posts/" + postId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").value("原始內容"))
+                .andExpect(jsonPath("$.data.tags").value(contains("露營")))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        // posts 那一列其實一個欄位都沒變，updated_at 就不該被推進——
+        // 卡片上的「已編輯」比對的正是這兩個時間，純換標籤不該讓它冒出來
+        JsonNode post = api.data(body);
+        assertThat(post.path("updatedAt").asText()).isEqualTo(post.path("createdAt").asText());
+    }
+
+    @Test
+    @DisplayName("編輯時不帶 tags 欄位，等同把標籤全部拿掉")
+    void clearsTagsWhenEditedWithoutTags() throws Exception {
+        long postId = createPost(author, "原始內容", List.of("陽明山", "登山"));
+
+        // 請求主體刻意完全沒有 tags 欄位：PUT 是全欄位取代，
+        // 「不給」與「給空陣列」在語意上是同一件事，而不是「維持原樣」
+        mockMvc.perform(put("/api/posts/" + postId)
+                        .header(HttpHeaders.AUTHORIZATION, author)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"改過的內容\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tags").isEmpty());
+
+        mockMvc.perform(get("/api/posts/" + postId))
+                .andExpect(jsonPath("$.data.content").value("改過的內容"))
+                .andExpect(jsonPath("$.data.tags").isEmpty());
+    }
+
+    @Test
     @DisplayName("別人的發文既不能編輯也不能刪除，且內容不受影響")
     void strangerCanNeitherEditNorDelete() throws Exception {
         long postId = createPost(author, "這是我的發文");
@@ -263,10 +383,14 @@ class PostApiIT extends MySqlContainerSupport {
     }
 
     private long createPost(String bearer, String content) throws Exception {
+        return createPost(bearer, content, List.of());
+    }
+
+    private long createPost(String bearer, String content, List<String> tags) throws Exception {
         String body = mockMvc.perform(post("/api/posts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new PostBody(content))))
+                        .content(objectMapper.writeValueAsString(new PostBody(content, tags))))
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
@@ -274,5 +398,5 @@ class PostApiIT extends MySqlContainerSupport {
         return api.data(body).path("postId").asLong();
     }
 
-    private record PostBody(String content) {}
+    private record PostBody(String content, List<String> tags) {}
 }

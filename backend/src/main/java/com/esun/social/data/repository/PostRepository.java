@@ -228,7 +228,7 @@ public class PostRepository {
      * 標籤清單序列化為 JSON 陣列，供 SP 以 {@code JSON_TABLE} 展開。
      *
      * <p>以 Jackson 而非字串拼接：即使標籤字元集已排除引號與反斜線
-     * （見 {@code TagExtractor}），手工拼 JSON 也是把正確性押在一個遠處的約定上。
+     * （見 {@code TagNormalizer}），手工拼 JSON 也是把正確性押在一個遠處的約定上。
      */
     private String toJsonArray(List<String> tags) {
         try {

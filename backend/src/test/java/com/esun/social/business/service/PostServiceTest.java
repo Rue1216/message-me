@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.esun.social.business.model.Post;
@@ -18,7 +19,7 @@ import com.esun.social.common.exception.ErrorCode;
 import com.esun.social.common.response.CursorPageResponse;
 import com.esun.social.common.util.Cursor;
 import com.esun.social.common.util.HtmlSanitizer;
-import com.esun.social.common.util.TagExtractor;
+import com.esun.social.common.util.TagNormalizer;
 import com.esun.social.data.repository.PostRepository;
 import com.esun.social.support.TestData;
 import java.time.LocalDateTime;
@@ -48,7 +49,7 @@ class PostServiceTest {
 
     @BeforeEach
     void setUp() {
-        postService = new PostService(postRepository, new HtmlSanitizer(), new TagExtractor());
+        postService = new PostService(postRepository, new HtmlSanitizer(), new TagNormalizer());
     }
 
     @Nested
@@ -162,27 +163,49 @@ class PostServiceTest {
     class Tagging {
 
         @Test
-        @DisplayName("新增時自內容解析出標籤一併寫入")
-        void extractsTagsOnCreate() {
+        @DisplayName("新增時把使用者指定的標籤一併寫入")
+        void storesGivenTagsOnCreate() {
             when(postRepository.create(eq(OWNER_ID), anyString(), isNull(), eq(List.of("登山", "美食"))))
                     .thenReturn(1L);
             when(postRepository.findById(OWNER_ID, 1L)).thenReturn(Optional.of(POST));
 
-            postService.create(OWNER_ID, "今天去 #登山 順便吃 #美食", null);
+            postService.create(OWNER_ID, "今天去走走", null, List.of("登山", "美食"));
 
-            verify(postRepository).create(OWNER_ID, "今天去 #登山 順便吃 #美食", null, List.of("登山", "美食"));
+            verify(postRepository).create(OWNER_ID, "今天去走走", null, List.of("登山", "美食"));
         }
 
         @Test
-        @DisplayName("編輯時依新內容重新解析，標籤整組替換")
-        void reExtractsTagsOnUpdate() {
+        @DisplayName("編輯時以新的標籤清單整組替換")
+        void replacesTagsOnUpdate() {
             when(postRepository.findById(OWNER_ID, 1L)).thenReturn(Optional.of(POST));
             when(postRepository.update(eq(1L), eq(OWNER_ID), anyString(), isNull(), eq(List.of("露營"))))
                     .thenReturn(true);
 
-            postService.update(1L, OWNER_ID, "改成 #露營", null);
+            postService.update(1L, OWNER_ID, "改成別的", null, List.of("露營"));
 
-            verify(postRepository).update(1L, OWNER_ID, "改成 #露營", null, List.of("露營"));
+            verify(postRepository).update(1L, OWNER_ID, "改成別的", null, List.of("露營"));
+        }
+
+        @Test
+        @DisplayName("內文裡的 # 只是文字，不會被解析成標籤")
+        void doesNotParseHashtagsFromContent() {
+            when(postRepository.create(eq(OWNER_ID), anyString(), isNull(), eq(List.of()))).thenReturn(1L);
+            when(postRepository.findById(OWNER_ID, 1L)).thenReturn(Optional.of(POST));
+
+            postService.create(OWNER_ID, "今天去 #登山 順便吃 #美食", null, List.of());
+
+            verify(postRepository).create(OWNER_ID, "今天去 #登山 順便吃 #美食", null, List.of());
+        }
+
+        @Test
+        @DisplayName("不合法的標籤在寫入資料庫之前就被擋下")
+        void rejectsIllegalTagBeforeWriting() {
+            assertThatThrownBy(() -> postService.create(OWNER_ID, "內容", null, List.of("台北101!")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(error -> ((BusinessException) error).errorCode())
+                    .isEqualTo(ErrorCode.VALIDATION_ERROR);
+
+            verifyNoInteractions(postRepository);
         }
 
         @Test
@@ -242,7 +265,7 @@ class PostServiceTest {
                     .thenReturn(1L);
             when(postRepository.findById(OWNER_ID, 1L)).thenReturn(Optional.of(POST));
 
-            postService.create(OWNER_ID, "<script>alert(1)</script>大家好", null);
+            postService.create(OWNER_ID, "<script>alert(1)</script>大家好", null, List.of());
 
             verify(postRepository).create(OWNER_ID, "大家好", null, List.of());
         }
@@ -250,7 +273,7 @@ class PostServiceTest {
         @Test
         @DisplayName("清洗後只剩空字串則拒絕")
         void rejectsContentThatIsOnlyMarkup() {
-            assertThatThrownBy(() -> postService.create(OWNER_ID, "<b>  </b>", null))
+            assertThatThrownBy(() -> postService.create(OWNER_ID, "<b>  </b>", null, List.of()))
                     .isInstanceOf(BusinessException.class)
                     .asInstanceOf(InstanceOfAssertFactories.type(BusinessException.class))
                     .extracting(BusinessException::errorCode)
@@ -262,7 +285,7 @@ class PostServiceTest {
         @Test
         @DisplayName("圖片路徑不是本站上傳格式則拒絕")
         void rejectsForeignImagePath() {
-            assertThatThrownBy(() -> postService.create(OWNER_ID, "內容", "https://evil.example.com/x.png"))
+            assertThatThrownBy(() -> postService.create(OWNER_ID, "內容", "https://evil.example.com/x.png", List.of()))
                     .isInstanceOf(BusinessException.class);
 
             verify(postRepository, never()).create(anyLong(), anyString(), anyString(), any());
@@ -278,7 +301,7 @@ class PostServiceTest {
         void refusesToEditSomeoneElsesPost() {
             when(postRepository.findById(STRANGER_ID, 1L)).thenReturn(Optional.of(POST));
 
-            assertThatThrownBy(() -> postService.update(1L, STRANGER_ID, "改掉", null))
+            assertThatThrownBy(() -> postService.update(1L, STRANGER_ID, "改掉", null, List.of()))
                     .isInstanceOf(BusinessException.class)
                     .asInstanceOf(InstanceOfAssertFactories.type(BusinessException.class))
                     .extracting(BusinessException::errorCode)
@@ -320,7 +343,7 @@ class PostServiceTest {
             when(postRepository.update(1L, OWNER_ID, "改過的內容", null, List.of()))
                     .thenReturn(true);
 
-            Post updated = postService.update(1L, OWNER_ID, "改過的內容", null);
+            Post updated = postService.update(1L, OWNER_ID, "改過的內容", null, List.of());
 
             assertThat(updated).isEqualTo(POST);
             verify(postRepository).update(1L, OWNER_ID, "改過的內容", null, List.of());

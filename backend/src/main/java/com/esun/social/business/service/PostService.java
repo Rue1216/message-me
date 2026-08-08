@@ -7,7 +7,7 @@ import com.esun.social.common.response.CursorPageResponse;
 import com.esun.social.common.util.Cursor;
 import com.esun.social.common.util.HtmlSanitizer;
 import com.esun.social.common.util.ImagePaths;
-import com.esun.social.common.util.TagExtractor;
+import com.esun.social.common.util.TagNormalizer;
 import com.esun.social.data.repository.PostRepository;
 import java.util.List;
 import java.util.Locale;
@@ -28,12 +28,12 @@ public class PostService {
 
     private final PostRepository postRepository;
     private final HtmlSanitizer htmlSanitizer;
-    private final TagExtractor tagExtractor;
+    private final TagNormalizer tagNormalizer;
 
-    public PostService(PostRepository postRepository, HtmlSanitizer htmlSanitizer, TagExtractor tagExtractor) {
+    public PostService(PostRepository postRepository, HtmlSanitizer htmlSanitizer, TagNormalizer tagNormalizer) {
         this.postRepository = postRepository;
         this.htmlSanitizer = htmlSanitizer;
-        this.tagExtractor = tagExtractor;
+        this.tagNormalizer = tagNormalizer;
     }
 
     /**
@@ -81,19 +81,22 @@ public class PostService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "找不到這篇發文"));
     }
 
-    public Post create(long userId, String content, String image) {
+    /**
+     * @param tags 使用者指定的標籤；內容中的 {@code #} 不再具有任何意義
+     */
+    public Post create(long userId, String content, String image, List<String> tags) {
         String safeContent = requireContent(content);
         long postId = postRepository.create(
-                userId, safeContent, ImagePaths.requireUploadedOrNull(image), tagExtractor.extract(safeContent));
+                userId, safeContent, ImagePaths.requireUploadedOrNull(image), tagNormalizer.normalise(tags));
         return findById(userId, postId);
     }
 
     /**
-     * 編輯發文，僅限本人。標籤依新內容重新解析並整組替換。
+     * 編輯發文，僅限本人。標籤以傳入的清單整組替換。
      *
-     * @throws BusinessException 發文不存在（404）或不屬於此使用者（403）
+     * @throws BusinessException 發文不存在（404）、不屬於此使用者（403）或標籤不合法（400）
      */
-    public Post update(long postId, long userId, String content, String image) {
+    public Post update(long postId, long userId, String content, String image, List<String> tags) {
         requireOwnership(postId, userId);
 
         String safeContent = requireContent(content);
@@ -102,7 +105,7 @@ public class PostService {
                 userId,
                 safeContent,
                 ImagePaths.requireUploadedOrNull(image),
-                tagExtractor.extract(safeContent));
+                tagNormalizer.normalise(tags));
         if (!updated) {
             // 兩次查詢之間發文被刪掉的競態；SP 的 user_id 比對是這條路徑的第二道關卡
             throw new BusinessException(ErrorCode.NOT_FOUND, "找不到這篇發文");

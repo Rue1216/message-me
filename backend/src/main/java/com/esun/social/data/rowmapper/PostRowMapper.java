@@ -38,7 +38,7 @@ public class PostRowMapper implements RowMapper<Post> {
     /**
      * 還原 GROUP_CONCAT 攤平的標籤字串。
      *
-     * <p>標籤名稱在寫入前已由 {@code TagExtractor} 限縮為 {@code [\p{L}\p{N}_]}，
+     * <p>標籤名稱在寫入前已由 {@code TagNormalizer} 限縮為 {@code [\p{L}\p{N}_]}，
      * 不可能含有分隔符，因此切分不會產生歧義。沒有任何標籤時 SQL 回傳的是 NULL 而非空字串。
      */
     private static List<String> splitTags(String concatenated) {

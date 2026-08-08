@@ -2,6 +2,7 @@ package com.esun.social.presentation.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
@@ -46,7 +47,7 @@ class PostControllerTest {
     private static final Post POST = new Post(
             1L,
             OWNER_ID,
-            "第一篇發文 #測試",
+            "第一篇發文",
             "/uploads/abc.jpg",
             2,
             3,
@@ -78,7 +79,7 @@ class PostControllerTest {
         mockMvc.perform(get("/api/posts"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].postId").value(1))
-                .andExpect(jsonPath("$.data.items[0].content").value("第一篇發文 #測試"))
+                .andExpect(jsonPath("$.data.items[0].content").value("第一篇發文"))
                 .andExpect(jsonPath("$.data.items[0].commentCount").value(2))
                 .andExpect(jsonPath("$.data.items[0].likeCount").value(3))
                 .andExpect(jsonPath("$.data.items[0].likedByMe").value(true))
@@ -181,7 +182,7 @@ class PostControllerTest {
     @Test
     @DisplayName("新增發文需登入，作者取自權杖")
     void createsPostAsAuthenticatedUser() throws Exception {
-        when(postService.create(OWNER_ID, "第一篇發文", null)).thenReturn(POST);
+        when(postService.create(OWNER_ID, "第一篇發文", null, List.of())).thenReturn(POST);
 
         mockMvc.perform(post("/api/posts")
                         .with(loggedInAs(OWNER_ID))
@@ -190,7 +191,21 @@ class PostControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.postId").value(1));
 
-        verify(postService).create(OWNER_ID, "第一篇發文", null);
+        verify(postService).create(OWNER_ID, "第一篇發文", null, List.of());
+    }
+
+    @Test
+    @DisplayName("請求中的標籤原樣轉交業務層")
+    void passesTagsToService() throws Exception {
+        when(postService.create(OWNER_ID, "第一篇發文", null, List.of("登山"))).thenReturn(POST);
+
+        mockMvc.perform(post("/api/posts")
+                        .with(loggedInAs(OWNER_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"第一篇發文\",\"tags\":[\"登山\"]}"))
+                .andExpect(status().isCreated());
+
+        verify(postService).create(OWNER_ID, "第一篇發文", null, List.of("登山"));
     }
 
     @Test
@@ -208,7 +223,9 @@ class PostControllerTest {
 
         mockMvc.perform(delete("/api/posts/1")).andExpect(status().isUnauthorized());
 
-        verify(postService, never()).create(anyLong(), anyString(), anyString());
+        // image 那格用 any() 而非 anyString()：這三個請求都沒有帶圖，image 會是 null，
+        // 而 anyString() 不匹配 null——寫成 anyString() 的話，控制器就算真的呼叫了也驗不出來
+        verify(postService, never()).create(anyLong(), anyString(), any(), anyList());
     }
 
     @Test
@@ -225,7 +242,7 @@ class PostControllerTest {
     @Test
     @DisplayName("編輯他人發文回 403")
     void mapsForbiddenToStatus403() throws Exception {
-        when(postService.update(anyLong(), anyLong(), anyString(), anyString()))
+        when(postService.update(anyLong(), anyLong(), anyString(), anyString(), anyList()))
                 .thenThrow(new BusinessException(ErrorCode.FORBIDDEN, "只能編輯或刪除自己的發文"));
 
         mockMvc.perform(put("/api/posts/1")

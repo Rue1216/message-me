@@ -90,7 +90,7 @@ public class PostController {
     @PostMapping
     public ResponseEntity<ApiResponse<PostResponse>> create(
             @AuthenticationPrincipal AuthenticatedUser principal, @Valid @RequestBody PostRequest request) {
-        Post created = postService.create(principal.userId(), request.content(), request.image());
+        Post created = postService.create(principal.userId(), request.content(), request.image(), request.tags());
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(PostResponse.from(created)));
     }
 
@@ -99,7 +99,8 @@ public class PostController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long postId,
             @Valid @RequestBody PostRequest request) {
-        Post updated = postService.update(postId, principal.userId(), request.content(), request.image());
+        Post updated =
+                postService.update(postId, principal.userId(), request.content(), request.image(), request.tags());
         return ApiResponse.success(PostResponse.from(updated));
     }
 
