@@ -55,6 +55,7 @@ function handleSubmit(payload: PostPayload): void {
       :key="post.postId"
       :initial-content="post.content"
       :initial-image="post.image ?? null"
+      :initial-tags="post.tags"
       submit-label="儲存"
       :submitting="update.isPending.value"
       @submit="handleSubmit"

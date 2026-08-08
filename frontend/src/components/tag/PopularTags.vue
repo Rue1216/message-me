@@ -56,7 +56,7 @@ const { data: tags, isPending } = useQuery({
       v-else-if="!tags?.length"
       class="text-sm text-muted-foreground"
     >
-      還沒有人使用標籤。在發文中輸入 #標籤 就會出現在這裡。
+      還沒有人使用標籤。發文時加上標籤就會出現在這裡。
     </p>
 
     <ul

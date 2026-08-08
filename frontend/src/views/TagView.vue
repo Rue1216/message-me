@@ -27,7 +27,7 @@ const feed = usePostsByTag(tagName)
       :has-next-page="feed.hasNextPage.value ?? false"
       :error="feed.error.value"
       empty-title="這個標籤底下還沒有發文"
-      empty-description="在發文中輸入 #標籤，就會出現在這裡。"
+      empty-description="發文時加上這個標籤，就會出現在這裡。"
       :on-load-more="() => feed.fetchNextPage()"
       :on-retry="() => feed.refetch()"
     />

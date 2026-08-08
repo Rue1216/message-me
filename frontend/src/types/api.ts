@@ -138,6 +138,8 @@ export interface UploadedImage {
 export interface PostPayload {
   content: string
   image?: string | null
+  /** 標籤名稱，不含 `#`。沒有標籤時送空陣列。 */
+  tags: string[]
 }
 
 export interface RegisterPayload {

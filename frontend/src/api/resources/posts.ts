@@ -40,7 +40,8 @@ export async function createPost(payload: PostPayload): Promise<Post> {
 /**
  * 編輯發文。僅本人可編輯，且為全欄位取代——不帶 image 即為移除圖片。
  *
- * 標籤不在請求主體中：後端會依新內容重新解析 `#標籤`，前端不需要（也不應該）自己算一次。
+ * 標籤同樣走全欄位取代：`tags` 由請求主體帶入（使用者在標籤輸入框指定，不從內文解析），
+ * 因此送空陣列就等於把這則發文的標籤全部清掉。要保留原有標籤，編輯表單必須把它們一併帶回來。
  */
 export async function updatePost(postId: number, payload: PostPayload): Promise<Post> {
   const response = await http.put<ApiResponse<Post>>(`/posts/${postId}`, payload)

@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import { validateCommentContent, validatePostContent } from '@/utils/validation/post'
 import {
+  MAX_TAGS_PER_POST,
+  TAG_MAX_LENGTH,
+  normaliseTag,
+  validateTag,
+} from '@/utils/validation/tag'
+import {
   validateBiography,
   validateEmail,
   validatePassword,
@@ -89,5 +95,52 @@ describe('validateCommentContent', () => {
     expect(validateCommentContent('說得好')).toBeNull()
     expect(validateCommentContent('')).not.toBeNull()
     expect(validateCommentContent('字'.repeat(1001))).not.toBeNull()
+  })
+})
+
+describe('normaliseTag', () => {
+  it('去除前後空白並轉為小寫', () => {
+    expect(normaliseTag('  Vue3  ')).toBe('vue3')
+  })
+
+  it('中文不受影響', () => {
+    expect(normaliseTag('登山')).toBe('登山')
+  })
+})
+
+describe('validateTag', () => {
+  it('接受文字、數字與底線', () => {
+    expect(validateTag('登山', [])).toBeNull()
+    expect(validateTag('spring_boot', [])).toBeNull()
+    expect(validateTag('vue3', [])).toBeNull()
+  })
+
+  it('空字串不算錯，只是沒有東西可加', () => {
+    expect(validateTag('   ', [])).toBeNull()
+  })
+
+  it.each(['台北101!', '台 北', 'a,b', '#登山', '半形-連字號'])(
+    '拒絕含不合法字元的 %s',
+    (value) => {
+      expect(validateTag(value, [])).toBe('標籤只能使用文字、數字與底線')
+    },
+  )
+
+  it('拒絕超過長度上限的標籤', () => {
+    expect(validateTag('a'.repeat(TAG_MAX_LENGTH + 1), [])).toBe('標籤不可超過 50 字')
+    expect(validateTag('a'.repeat(TAG_MAX_LENGTH), [])).toBeNull()
+  })
+
+  it('已達數量上限時拒絕再加', () => {
+    const full = Array.from({ length: MAX_TAGS_PER_POST }, (_, index) => `tag${index}`)
+
+    expect(validateTag('再一個', full)).toBe('標籤最多 10 個')
+    expect(validateTag('再一個', full.slice(0, -1))).toBeNull()
+  })
+
+  it('數量上限的檢查先於字元集，訊息才指向真正擋住的原因', () => {
+    const full = Array.from({ length: MAX_TAGS_PER_POST }, (_, index) => `tag${index}`)
+
+    expect(validateTag('台北101!', full)).toBe('標籤最多 10 個')
   })
 })
